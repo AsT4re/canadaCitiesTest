@@ -70,25 +70,28 @@ func Index(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprintf(w, "Hello !", html.EscapeString(r.URL.Path))
 }
 
-// type Properties struct {
-// 	name       string     `json:"name"`
-// 	place_key  string     `json:"place_key"`
-// 	capital    string     `json:"capital"`
-// 	population float64    `json:"population"`
-// 	pclass     string     `json:"pclass"`
-// 	cartodb_id int64      `json:"cartodb_id"`
-// 	created_at string     `json:"created_at"`
-// 	updated_at string     `json:"updated_at"`
-// }
+// Define types to read
+type Feature struct {
+  Type          string     `json:"type"`
+	Geometry struct {
+		Type        string     `json:"type"`
+		Coordinates []float64  `json:"coordinates"`
+	}                        `json:"geometry"`
+	Properties struct {
+		Name        string     `json:"name"`
+		Place_key   string     `json:"place_key"`
+		Capital     string     `json:"capital"`
+		Population  float64    `json:"population"`
+		Pclass      string     `json:"pclass"`
+		Cartodb_id  int64      `json:"cartodb_id"`
+		Created_at  string     `json:"created_at"`
+		Updated_at  string     `json:"updated_at"`
+	}                        `json:"properties"`
+}
 
-// type Feature struct {
-// //	geometry   string     `json:"geometry"`
-// 	properties Properties `json:"properties"`
-// }
-
-// type Features struct {
-// 	features   []Feature  `json:"features"`
-// }
+type GeoJSON struct {
+	Features   []Feature    `json:"features"`
+}
 
 func Import(w http.ResponseWriter, r *http.Request) {
 	body, err := ioutil.ReadAll(r.Body)
@@ -97,14 +100,19 @@ func Import(w http.ResponseWriter, r *http.Request) {
 	}
 	r.Body.Close()
 
-	fmt.Printf("Beginning of body: ", string(body[:100]))
+	//fmt.Printf("Beginning of body: ", string(body[:100]))
 
-	var feats map[string]interface{}
-	err = json.Unmarshal(body, &feats)
-	//x.Checkf(err, "While unmarshalling Json file")
-	if err != nil {
-	 	log.Fatal("Error at Unmarshal")
+	feats := GeoJSON{}
+
+	if err := json.Unmarshal(body, &feats); err != nil {
+		panic(err)
 	}
 
-	fmt.Printf("Nb features: %v", len(feats))
+	for i, feat := range feats.Features {
+		if i == 0 {
+			fmt.Printf("Nb features: %v", feat.Geometry.Coordinates[0])
+		}
+	}
+
+	fmt.Printf("Nb features: %v", len(feats.Features))
 }
