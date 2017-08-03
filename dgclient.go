@@ -1,10 +1,14 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"context"
 	"io/ioutil"
 	"os"
+	"bytes"
+  "time"
+	"encoding/json"
 	"google.golang.org/grpc"
 	"github.com/dgraph-io/dgraph/client"
 	"github.com/golang/protobuf/proto"
@@ -69,23 +73,24 @@ func (dgCl *DGClient) Init() error {
 	return nil
 }
 
-func addEdge(name string, value Interface{}, mnode *client.Node, req *client.Req) error {
+func addEdge(name string, value interface{}, mnode *client.Node, req *client.Req) error {
 	e := mnode.Edge(name)
-	switch v := i.(type) {
-	case int:
-		err = e.SetValueInt(value)
+	var err error
+	switch v := value.(type) {
+	case int64:
+		err = e.SetValueInt(v)
 	case string:
 		if name == "geo" {
-			err = e.SetValueGeoJson(value)
+			err = e.SetValueGeoJson(v)
 		} else {
-			err = e.SetValueString(value)
+			err = e.SetValueString(v)
 		}
 	case time.Time:
-		err = e.SetValueDatetime(value)
+		err = e.SetValueDatetime(v)
 	case float64:
-		err = e.SetValueFloat(value)
+		err = e.SetValueFloat(v)
 	default:
-		return "Type for value not handled yet"
+		return errors.New("Type for value not handled yet")
 	}
 
 	if err != nil {
@@ -102,7 +107,7 @@ func addEdge(name string, value Interface{}, mnode *client.Node, req *client.Req
 }
 
 func (dgCl *DGClient) AddGeoJSON(feats *GeoJSON) error {
-	for i, feat := range myObj.Features {
+	for _, feat := range feats.Features {
 		req := client.Req{}
 		mnode, err := dgCl.dg.NodeBlank("")
 		if err != nil {
@@ -135,17 +140,18 @@ func (dgCl *DGClient) AddGeoJSON(feats *GeoJSON) error {
 			return err
 		}
 
-		var geoJson string
-		buf := bytes.NewBufferString(geoJson)
-		if err := json.NewEncoder(buf).Encode(feat.Geometry); err != nil {
+		buf := bytes.Buffer{}
+		if err := json.NewEncoder(&buf).Encode(feat.Geometry); err != nil {
 			fmt.Printf("(DGClient) Error while encoding to Json feat.Geometry: %v", err)
 			return err
 		}
-		if err = addEdge("geo", geoJson, &mnode, &req); err != nil {
+		geoStr := buf.String()
+
+		if err = addEdge("geo", geoStr, &mnode, &req); err != nil {
 			return err
 		}
 
-		if resp, err := dgCl.dg.Run(context.Background(), &req); err != nil {
+		if _, err := dgCl.dg.Run(context.Background(), &req); err != nil {
 			fmt.Printf("(DGClient) Error while executing the mutation request: %v", err)
 			return err
 		}
