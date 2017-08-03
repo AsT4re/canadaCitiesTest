@@ -1,0 +1,11 @@
+{me(func: eq(cartodb_id, 744)) {
+    name
+    geo
+    capital
+  	cartodb_id
+    created_at
+  	updated_at
+  	pclass
+    place_key
+    population
+}}
