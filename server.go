@@ -86,7 +86,7 @@ func StatusHandler(s *Server) http.HandlerFunc {
 	return func (w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json; charset=UTF-8")
 		w.WriteHeader(http.StatusOK)
-		repJson := StatusRep {Message: "Cancities Server running on port 8443"}
+		repJson := StatusRep{Message: "Cancities Server running on port 8443"}
 		if err := json.NewEncoder(w).Encode(repJson); err != nil {
 			panic(err)
 		}
