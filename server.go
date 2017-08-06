@@ -39,6 +39,12 @@ func getRoutes(s *Server) []Route {
 			"/import",
 			ImportHandler(s),
 		},
+		Route{
+			"Find",
+			"GET",
+			"/id/{id:[0-9]+}",
+			FindHandler(s),
+		},
 	}
 }
 
@@ -75,6 +81,10 @@ func (s *Server) Start() {
 }
 
 // Handlers
+
+type ErrorRep struct {
+	Error   string `json:"error"`
+}
 
 // Status Reply
 type StatusRep struct {
@@ -135,4 +145,45 @@ func ImportHandler(s *Server) http.HandlerFunc {
 	}
 }
 
+// Status Reply
+type FindRep struct {
+	CartodbId   int64     `json:"cartodb_id"`
+	Name        string    `json:"name"`
+	Population  int64     `json:"population"`
+	Coordinates []float64 `json:"coordinates"`
+}
+
+func FindHandler(s *Server) http.HandlerFunc {
+	return func (w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json; charset=UTF-8")
+		vars := mux.Vars(r)
+		var rep interface{}
+		cityId := vars["id"]
+		if city, err := s.db.GetCity(cityId); err != nil {
+			fmt.Printf("(FindHandler) error get city: %v", err)
+			w.WriteHeader(http.StatusInternalServerError)
+			rep = ErrorRep{Error: "Internal Error"}
+		} else if city.Root == nil {
+			w.WriteHeader(http.StatusNotFound)
+			rep = ErrorRep{Error: fmt.Sprintf("City with id %v not found", cityId)}
+		} else {
+			if geo, err := DecodeGeoDatas(city.Root.Geo); err != nil {
+				fmt.Printf("(FindHandler) error decoding geo datas: %v", err)
+				w.WriteHeader(http.StatusInternalServerError)
+				rep = ErrorRep{Error: "Internal Error"}
+			} else {
+				rep = FindRep{
+					CartodbId: city.Root.Cartodb_id,
+					Name: city.Root.Name,
+					Population: city.Root.Population,
+					Coordinates: geo.FlatCoords(),
+				}
+				w.WriteHeader(http.StatusOK)
+			}
+		}
+		if err := json.NewEncoder(w).Encode(rep); err != nil {
+			panic(err)
+		}
+	}
+}
 

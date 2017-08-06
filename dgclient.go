@@ -12,6 +12,8 @@ import (
 	"google.golang.org/grpc"
 	"github.com/dgraph-io/dgraph/client"
 	"github.com/golang/protobuf/proto"
+	"github.com/twpayne/go-geom/encoding/wkb"
+	geom "github.com/twpayne/go-geom"
 )
 
 // Class for handling dgraph database requests
@@ -157,6 +159,68 @@ func (dgCl *DGClient) AddGeoJSON(feats *GeoJSON) error {
 		}
 	}
 	return nil
+}
+
+type cityGeo struct {
+	Coordinates []float64   `dgraph:"coordinates"`
+}
+
+type cityProps struct {
+	Name        string      `dgraph:"name"`
+	Population  int64       `dgraph:"population"`
+	Cartodb_id  int64       `dgraph:"cartodb_id"`
+	Geo         []byte      `dgraph:"geo"`
+}
+
+type cityReq struct {
+ 	Root        *cityProps  `dgraph:"city"`
+}
+
+func (dgCl *DGClient) GetCity(id string) (cityReq, error){
+	getCityTemplate := `{
+    city(func: eq(cartodb_id, $id)) {
+      name
+      geo
+      cartodb_id
+      population
+    }
+  }`
+
+	getCityMap := make(map[string]string)
+
+	req := client.Req{}
+	getCityMap["$id"] = id
+
+	req.SetQueryWithVariables(getCityTemplate, getCityMap)
+
+	var city cityReq
+	resp, err := dgCl.dg.Run(context.Background(), &req)
+	if err != nil {
+		fmt.Printf("(DGClient) Error while executing the GetCity request: %v", err)
+		return city, err
+	}
+
+	if len(resp.N[0].Children) == 0 {
+		return city, nil
+	}
+
+	if err = client.Unmarshal(resp.N, &city); err != nil {
+		fmt.Printf("(DClient) error while unmarshal dgraph reply: %v", err)
+		return city, err
+	}
+
+	fmt.Printf("Root is nil: %v\n", city.Root == nil)
+
+	return city, nil
+}
+
+func DecodeGeoDatas(geo []byte) (geom.T, error) {
+	if vc, err := wkb.Unmarshal(geo); err != nil {
+		fmt.Printf("(DGClient) Error when calling wkb.unmarshal: %v", err)
+		return nil, err
+	} else {
+		return vc, nil
+	}
 }
 
 func (dgc *DGClient) Close() {
