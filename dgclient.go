@@ -161,10 +161,6 @@ func (dgCl *DGClient) AddGeoJSON(feats *ImportReq) error {
 	return nil
 }
 
-type cityGeo struct {
-	Coordinates []float64   `dgraph:"coordinates"`
-}
-
 type cityProps struct {
 	Name        string      `dgraph:"name"`
 	Population  int64       `dgraph:"population"`
@@ -208,8 +204,6 @@ func (dgCl *DGClient) GetCity(id string) (cityReq, error){
 		fmt.Printf("(DClient) error while unmarshal dgraph reply: %v", err)
 		return city, err
 	}
-
-	fmt.Printf("Root is nil: %v\n", city.Root == nil)
 
 	return city, nil
 }
