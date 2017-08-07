@@ -108,7 +108,7 @@ func addEdge(name string, value interface{}, mnode *client.Node, req *client.Req
 	return nil
 }
 
-func (dgCl *DGClient) AddGeoJSON(feats *GeoJSON) error {
+func (dgCl *DGClient) AddGeoJSON(feats *ImportReq) error {
 	for _, feat := range feats.Features {
 		req := client.Req{}
 		mnode, err := dgCl.dg.NodeBlank("")
