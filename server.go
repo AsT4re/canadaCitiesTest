@@ -15,11 +15,31 @@ type Server struct {
 	router *mux.Router
 }
 
+type httpRetMsg struct {
+	Code      int
+	JsonTempl interface{}
+}
+
+type appHandler func(http.ResponseWriter, *http.Request) *httpRetMsg
+
+func (fn appHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json; charset=UTF-8")
+	ret := fn(w, r)
+	w.WriteHeader(ret.Code)
+	if ret.Code >= 500 {
+		ret.JsonTempl = ErrorRep{"Internal Error"}
+	}
+
+	if err := json.NewEncoder(w).Encode(ret.JsonTempl); err != nil {
+		panic(err)
+	}
+}
+
 type Route struct {
 	Name        string
 	Method      string
 	Pattern     string
-	HandlerFunc http.HandlerFunc
+	Handler     appHandler
 }
 
 type Routes []Route
@@ -67,7 +87,7 @@ func NewServer() (*Server, error) {
 			Methods(route.Method).
 			Path(route.Pattern).
 			Name(route.Name).
-			Handler(route.HandlerFunc)
+			Handler(route.Handler)
 	}
 
 	return s, nil
@@ -82,71 +102,67 @@ func (s *Server) Start() {
 // Handlers
 
 // Status
-func StatusHandler(s *Server) http.HandlerFunc {
-	return func (w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json; charset=UTF-8")
-		w.WriteHeader(http.StatusOK)
-		repJson := StatusRep{Message: "Cancities Server running on port 8443"}
-		if err := json.NewEncoder(w).Encode(repJson); err != nil {
-			panic(err)
+func StatusHandler(s *Server) appHandler {
+	return func (w http.ResponseWriter, r *http.Request) *httpRetMsg {
+		return &httpRetMsg{
+			http.StatusOK,
+			StatusRep{"Cancities Server running on port 8443"},
 		}
 	}
 }
 
-
-func ImportHandler(s *Server) http.HandlerFunc {
-	return func (w http.ResponseWriter, r *http.Request) {
+func ImportHandler(s *Server) appHandler {
+	return func (w http.ResponseWriter, r *http.Request) *httpRetMsg {
 		body, err := ioutil.ReadAll(r.Body)
 		if err != nil {
-			log.Fatal("Error reading request body")
+			return &httpRetMsg{Code: http.StatusInternalServerError}
 		}
 		r.Body.Close()
-
-		//fmt.Printf("Beginning of body: ", string(body[:100]))
 
 		feats := ImportReq{}
 
 		if err := json.Unmarshal(body, &feats); err != nil {
-			panic(err)
+			return &httpRetMsg{
+				http.StatusUnprocessableEntity,
+				ErrorRep{fmt.Sprintf("Bad import request body: %v", err)},
+			}
 		}
 
-		s.db.AddGeoJSON(&feats)
+		if err = s.db.AddGeoJSON(&feats); err != nil {
+			return &httpRetMsg{Code: http.StatusInternalServerError}
+		}
 
-		fmt.Printf("Nb features: %v", len(feats.Features))
+		return &httpRetMsg{Code: http.StatusCreated}
 	}
 }
 
-
-func FindHandler(s *Server) http.HandlerFunc {
-	return func (w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json; charset=UTF-8")
+func FindHandler(s *Server) appHandler {
+	return func (w http.ResponseWriter, r *http.Request) *httpRetMsg {
 		vars := mux.Vars(r)
-		var rep interface{}
 		cityId := vars["id"]
 		if city, err := s.db.GetCity(cityId); err != nil {
 			fmt.Printf("(FindHandler) error get city: %v", err)
-			w.WriteHeader(http.StatusInternalServerError)
-			rep = ErrorRep{Error: "Internal Error"}
+			return &httpRetMsg{Code: http.StatusInternalServerError}
 		} else if city.Root == nil {
-			w.WriteHeader(http.StatusNotFound)
-			rep = ErrorRep{Error: fmt.Sprintf("City with id %v not found", cityId)}
+			return &httpRetMsg{
+				http.StatusNotFound,
+				ErrorRep{fmt.Sprintf("City with id %v not found", cityId)},
+			}
 		} else {
 			if geo, err := DecodeGeoDatas(city.Root.Geo); err != nil {
 				fmt.Printf("(FindHandler) error decoding geo datas: %v", err)
-				w.WriteHeader(http.StatusInternalServerError)
-				rep = ErrorRep{Error: "Internal Error"}
+				return &httpRetMsg{Code: http.StatusInternalServerError}
 			} else {
-				rep = FindRep{
-					CartodbId: city.Root.Cartodb_id,
-					Name: city.Root.Name,
-					Population: city.Root.Population,
-					Coordinates: geo.FlatCoords(),
+				return &httpRetMsg{
+					http.StatusOK,
+					FindRep{
+						CartodbId: city.Root.Cartodb_id,
+						Name: city.Root.Name,
+						Population: city.Root.Population,
+						Coordinates: geo.FlatCoords(),
+					},
 				}
-				w.WriteHeader(http.StatusOK)
 			}
-		}
-		if err := json.NewEncoder(w).Encode(rep); err != nil {
-			panic(err)
 		}
 	}
 }
