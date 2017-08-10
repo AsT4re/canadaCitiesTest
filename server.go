@@ -30,8 +30,10 @@ func (fn appHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		ret.JsonTempl = ErrorRep{"Internal Error"}
 	}
 
-	if err := json.NewEncoder(w).Encode(ret.JsonTempl); err != nil {
-		panic(err)
+	if (ret.JsonTempl != nil) {
+		if err := json.NewEncoder(w).Encode(ret.JsonTempl); err != nil {
+			panic(err)
+		}
 	}
 }
 
@@ -148,14 +150,13 @@ func FindHandler(s *Server) appHandler {
 				http.StatusNotFound,
 				ErrorRep{fmt.Sprintf("City with id %v not found", cityId)},
 			}
-		} else {
-			if geo, err := DecodeGeoDatas(city.Root.Geo); err != nil {
+		} else if geo, err := DecodeGeoDatas(city.Root.Geo); err != nil {
 				fmt.Printf("(FindHandler) error decoding geo datas: %v", err)
 				return &httpRetMsg{Code: http.StatusInternalServerError}
 			} else {
 				return &httpRetMsg{
 					http.StatusOK,
-					FindRep{
+					CityTempl{
 						CartodbId: city.Root.Cartodb_id,
 						Name: city.Root.Name,
 						Population: city.Root.Population,

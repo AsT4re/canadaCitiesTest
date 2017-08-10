@@ -36,7 +36,7 @@ type StatusRep struct {
 }
 
 // Find Reply Template
-type FindRep struct {
+type CityTempl struct {
 	CartodbId       int64      `json:"cartodb_id"`
 	Name            string     `json:"name"`
 	Population      int64      `json:"population"`

@@ -173,7 +173,7 @@ type cityReq struct {
 }
 
 func (dgCl *DGClient) GetCity(id string) (cityReq, error){
-	getCityTemplate := `{
+	getCityTempl := `{
     city(func: eq(cartodb_id, $id)) {
       name
       geo
@@ -182,12 +182,11 @@ func (dgCl *DGClient) GetCity(id string) (cityReq, error){
     }
   }`
 
-	getCityMap := make(map[string]string)
+	reqMap := make(map[string]string)
+	reqMap["$id"] = id
 
 	req := client.Req{}
-	getCityMap["$id"] = id
-
-	req.SetQueryWithVariables(getCityTemplate, getCityMap)
+	req.SetQueryWithVariables(getCityTempl, reqMap)
 
 	var city cityReq
 	resp, err := dgCl.dg.Run(context.Background(), &req)
@@ -201,7 +200,7 @@ func (dgCl *DGClient) GetCity(id string) (cityReq, error){
 	}
 
 	if err = client.Unmarshal(resp.N, &city); err != nil {
-		fmt.Printf("(DClient) error while unmarshal dgraph reply: %v", err)
+		fmt.Printf("(DGClient) error while unmarshal dgraph reply: %v", err)
 		return city, err
 	}
 
