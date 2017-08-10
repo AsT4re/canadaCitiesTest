@@ -7,6 +7,7 @@ import (
 	"io/ioutil"
 	"os"
 	"bytes"
+	"strconv"
   "time"
 	"encoding/json"
 	"google.golang.org/grpc"
@@ -170,6 +171,74 @@ type cityProps struct {
 
 type cityReq struct {
  	Root        *cityProps  `dgraph:"city"`
+}
+
+type citiesReq struct {
+	Root        []*cityProps  `dgraph:"cities"`
+}
+
+func (dgCl *DGClient) GetCitiesAround(pos []float64, dist uint64) (citiesReq, error){
+
+	getCitiesAroundTempl := `{
+    cities(func: within(geo, $bndBox)) {
+      name
+      geo
+      cartodb_id
+      population
+    }
+  }`
+
+	minLat, minLong, maxLat, maxLong := getBoundingBox(pos[0], pos[1], float64(dist))
+
+	bndBox := [5][2]float64{
+		{minLong, minLat},
+		{maxLong, minLat},
+		{maxLong, maxLat},
+		{minLong, maxLat},
+		{minLong, minLat},
+	}
+
+	var buffer bytes.Buffer
+	buffer.WriteString("[")
+	for i := 0 ; i < 5; i++ {
+		if i != 0 {
+			buffer.WriteString(", ")
+		}
+		buffer.WriteString("[")
+		for j := 0; j < 2; j++ {
+			if j != 0 {
+				buffer.WriteString(", ")
+			}
+			buffer.WriteString(strconv.FormatFloat(bndBox[i][j], 'f', -1, 64))
+		}
+		buffer.WriteString("]")
+	}
+	buffer.WriteString("]")
+
+	reqMap := make(map[string]string)
+
+	reqMap["$bndBox"] = buffer.String()
+
+	req := client.Req{}
+	req.SetQueryWithVariables(getCitiesAroundTempl, reqMap)
+
+	var cities citiesReq
+	resp, err := dgCl.dg.Run(context.Background(), &req)
+	if err != nil {
+		fmt.Printf("(DGClient) Error while executing the GetCitiesAround request: %v", err)
+		return cities, err
+	}
+
+	if len(resp.N[0].Children) == 0 {
+		return cities, nil
+	}
+
+	if err = client.Unmarshal(resp.N, &cities); err != nil {
+		fmt.Printf("(DGClient) error while unmarshal dgraph reply: %v", err)
+		return cities, err
+	}
+
+	return cities, nil
 }
 
 func (dgCl *DGClient) GetCity(id string) (cityReq, error){

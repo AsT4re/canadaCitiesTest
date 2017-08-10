@@ -42,3 +42,7 @@ type CityTempl struct {
 	Population      int64      `json:"population"`
 	Coordinates     []float64  `json:"coordinates"`
 }
+
+type CitiesTempl struct {
+	Cities          []CityTempl `json:"cities"`
+}

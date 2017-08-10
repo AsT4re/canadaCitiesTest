@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"io/ioutil"
 	"fmt"
+	"strconv"
 )
 
 type Server struct {
@@ -138,6 +139,19 @@ func ImportHandler(s *Server) appHandler {
 	}
 }
 
+// Check validation of uint64 query string parameter
+func getUIntQsParam(v []string, key string) (uint64, error) {
+	if len(v) != 1 {
+		return 0, fmt.Errorf("Too many values for query string parameter: %v", key)
+	} else {
+		if u, err := strconv.ParseUint(v[0], 10, 64); err != nil {
+			return 0, fmt.Errorf("Invalid uint query string value '%v' for parameter '%v'", v[0], key)
+		} else {
+			return u, nil
+		}
+	}
+}
+
 func FindHandler(s *Server) appHandler {
 	return func (w http.ResponseWriter, r *http.Request) *httpRetMsg {
 		vars := mux.Vars(r)
@@ -153,6 +167,40 @@ func FindHandler(s *Server) appHandler {
 		} else if geo, err := DecodeGeoDatas(city.Root.Geo); err != nil {
 				fmt.Printf("(FindHandler) error decoding geo datas: %v", err)
 				return &httpRetMsg{Code: http.StatusInternalServerError}
+		} else {
+			r.ParseForm()
+			v, ok := r.Form["dist"]
+			if ok {
+				if u, err := getUIntQsParam(v, "dist"); err != nil {
+					return &httpRetMsg{
+						http.StatusBadRequest,
+						ErrorRep{err.Error()},
+					}
+				} else {
+					if cities, err := s.db.GetCitiesAround(geo.FlatCoords(), u); err != nil {
+						fmt.Printf("(FindHandler) error get cities: %v", err)
+						return &httpRetMsg{Code: http.StatusInternalServerError}
+					} else {
+						citiesRep := make([]CityTempl, len(cities.Root))
+						for i, city := range cities.Root {
+							citiesRep[i].CartodbId = city.Cartodb_id
+							citiesRep[i].Name = city.Name
+							citiesRep[i].Population = city.Population
+							if geo, err := DecodeGeoDatas(city.Geo); err != nil {
+								fmt.Printf("(FindHandler) error decoding geo datas: %v", err)
+								return &httpRetMsg{Code: http.StatusInternalServerError}
+							} else {
+								citiesRep[i].Coordinates = geo.FlatCoords()
+							}
+						}
+						return &httpRetMsg{
+							http.StatusOK,
+							CitiesTempl{
+								citiesRep,
+							},
+						}
+					}
+				}
 			} else {
 				return &httpRetMsg{
 					http.StatusOK,
