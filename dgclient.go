@@ -17,12 +17,41 @@ import (
 	geom "github.com/twpayne/go-geom"
 )
 
-// Class for handling dgraph database requests
+
+
+/*
+ * Public structures
+ */
+
+type cityProps struct {
+	Name        string       `dgraph:"name"`
+	Population  int64        `dgraph:"population"`
+	Cartodb_id  int64        `dgraph:"cartodb_id"`
+	Geo         []byte       `dgraph:"geo"`
+}
+
+// Reply structure from GetCity request
+type cityRep struct {
+ 	Root        *cityProps   `dgraph:"city"`
+}
+
+// Reply structure from GetCitiesAround request
+type citiesRep struct {
+	Root        []*cityProps `dgraph:"cities"`
+}
+
+// Main class for handling dgraph database requests
 type DGClient struct {
 	conn      *grpc.ClientConn
 	clientDir string
 	dg        *client.Dgraph
 }
+
+
+
+/*
+ * DGClient object with constructor and public methods
+ */
 
 // DGClient constructor: initialize grpc connection and dgraph client
 func NewDGClient() (*DGClient, error) {
@@ -76,39 +105,18 @@ func (dgCl *DGClient) Init() error {
 	return nil
 }
 
-func addEdge(name string, value interface{}, mnode *client.Node, req *client.Req) error {
-	e := mnode.Edge(name)
-	var err error
-	switch v := value.(type) {
-	case int64:
-		err = e.SetValueInt(v)
-	case string:
-		if name == "geo" {
-			err = e.SetValueGeoJson(v)
-		} else {
-			err = e.SetValueString(v)
-		}
-	case time.Time:
-		err = e.SetValueDatetime(v)
-	case float64:
-		err = e.SetValueFloat(v)
-	default:
-		return errors.New("Type for value not handled yet")
+// Close to cleanly exit at the end of the program
+func (dgc *DGClient) Close() {
+	if dgc.conn != nil {
+		dgc.conn.Close()
 	}
 
-	if err != nil {
-		fmt.Printf("(DGClient) Error while setting value for %v edge with value %v: %v", name, value, err)
-		return err
+	if dgc.clientDir != "" {
+		os.RemoveAll(dgc.clientDir)
 	}
-	err = req.Set(e)
-	if err != nil {
-		fmt.Printf("(DGClient) Error while setting value for %v edge with value %v: %v", name, value, err)
-		return err
-	}
-
-	return nil
 }
 
+// Method for importing GeoJson
 func (dgCl *DGClient) AddGeoJSON(feats *ImportReq) error {
 	for _, feat := range feats.Features {
 		req := client.Req{}
@@ -162,22 +170,27 @@ func (dgCl *DGClient) AddGeoJSON(feats *ImportReq) error {
 	return nil
 }
 
-type cityProps struct {
-	Name        string      `dgraph:"name"`
-	Population  int64       `dgraph:"population"`
-	Cartodb_id  int64       `dgraph:"cartodb_id"`
-	Geo         []byte      `dgraph:"geo"`
+// Method for getting informations about a specific city given his id
+func (dgCl *DGClient) GetCity(id string) (cityRep, error){
+	getCityTempl := `{
+    city(func: eq(cartodb_id, $id)) {
+      name
+      geo
+      cartodb_id
+      population
+    }
+  }`
+
+	reqMap := make(map[string]string)
+	reqMap["$id"] = id
+
+	var city cityRep
+	err := SendRequest(dgCl, &getCityTempl, &reqMap, &city)
+	return city, err
 }
 
-type cityReq struct {
- 	Root        *cityProps  `dgraph:"city"`
-}
-
-type citiesReq struct {
-	Root        []*cityProps  `dgraph:"cities"`
-}
-
-func (dgCl *DGClient) GetCitiesAround(pos []float64, dist uint64) (citiesReq, error){
+// Method for getting informations about cities within a bounding box given his center coordinates and distance in kilometers
+func (dgCl *DGClient) GetCitiesAround(pos []float64, dist uint64) (citiesRep, error){
 	minLat, minLong, maxLat, maxLong := getBoundingBox(pos[0], pos[1], float64(dist))
 
 	bndBox := [5][2]float64{
@@ -205,7 +218,7 @@ func (dgCl *DGClient) GetCitiesAround(pos []float64, dist uint64) (citiesReq, er
 	}
 	buffer.WriteString("]")
 
-		getCitiesAroundTempl := `{
+	getCitiesAroundTempl := `{
     cities(func: within(geo, $bndBox)) {
       name
       geo
@@ -217,27 +230,64 @@ func (dgCl *DGClient) GetCitiesAround(pos []float64, dist uint64) (citiesReq, er
 	reqMap := make(map[string]string)
 	reqMap["$bndBox"] = buffer.String()
 
-	var cities citiesReq
+	var cities citiesRep
 	err := SendRequest(dgCl, &getCitiesAroundTempl, &reqMap, &cities)
 	return cities, err
 }
 
-func (dgCl *DGClient) GetCity(id string) (cityReq, error){
-	getCityTempl := `{
-    city(func: eq(cartodb_id, $id)) {
-      name
-      geo
-      cartodb_id
-      population
-    }
-  }`
 
-	reqMap := make(map[string]string)
-	reqMap["$id"] = id
 
-	var city cityReq
-	err := SendRequest(dgCl, &getCityTempl, &reqMap, &city)
-	return city, err
+/*
+   Public helpers
+*/
+
+// Helper for decoding geodatas in binary format
+func DecodeGeoDatas(geo []byte) (geom.T, error) {
+	if vc, err := wkb.Unmarshal(geo); err != nil {
+		fmt.Printf("(DGClient) Error when calling wkb.unmarshal: %v", err)
+		return nil, err
+	} else {
+		return vc, nil
+	}
+}
+
+
+
+/*
+   Private functions
+*/
+
+func addEdge(name string, value interface{}, mnode *client.Node, req *client.Req) error {
+	e := mnode.Edge(name)
+	var err error
+	switch v := value.(type) {
+	case int64:
+		err = e.SetValueInt(v)
+	case string:
+		if name == "geo" {
+			err = e.SetValueGeoJson(v)
+		} else {
+			err = e.SetValueString(v)
+		}
+	case time.Time:
+		err = e.SetValueDatetime(v)
+	case float64:
+		err = e.SetValueFloat(v)
+	default:
+		return errors.New("Type for value not handled yet")
+	}
+
+	if err != nil {
+		fmt.Printf("(DGClient) Error while setting value for %v edge with value %v: %v", name, value, err)
+		return err
+	}
+	err = req.Set(e)
+	if err != nil {
+		fmt.Printf("(DGClient) Error while setting value for %v edge with value %v: %v", name, value, err)
+		return err
+	}
+
+	return nil
 }
 
 func SendRequest(dgCl *DGClient, reqStr *string, reqMap *map[string]string, rep interface{}) error {
@@ -260,23 +310,4 @@ func SendRequest(dgCl *DGClient, reqStr *string, reqMap *map[string]string, rep 
 	}
 
 	return nil
-}
-
-func DecodeGeoDatas(geo []byte) (geom.T, error) {
-	if vc, err := wkb.Unmarshal(geo); err != nil {
-		fmt.Printf("(DGClient) Error when calling wkb.unmarshal: %v", err)
-		return nil, err
-	} else {
-		return vc, nil
-	}
-}
-
-func (dgc *DGClient) Close() {
-	if dgc.conn != nil {
-		dgc.conn.Close()
-	}
-
-	if dgc.clientDir != "" {
-		os.RemoveAll(dgc.clientDir)
-	}
 }
