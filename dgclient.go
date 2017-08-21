@@ -178,16 +178,6 @@ type citiesReq struct {
 }
 
 func (dgCl *DGClient) GetCitiesAround(pos []float64, dist uint64) (citiesReq, error){
-
-	getCitiesAroundTempl := `{
-    cities(func: within(geo, $bndBox)) {
-      name
-      geo
-      cartodb_id
-      population
-    }
-  }`
-
 	minLat, minLong, maxLat, maxLong := getBoundingBox(pos[0], pos[1], float64(dist))
 
 	bndBox := [5][2]float64{
@@ -215,30 +205,21 @@ func (dgCl *DGClient) GetCitiesAround(pos []float64, dist uint64) (citiesReq, er
 	}
 	buffer.WriteString("]")
 
-	reqMap := make(map[string]string)
+		getCitiesAroundTempl := `{
+    cities(func: within(geo, $bndBox)) {
+      name
+      geo
+      cartodb_id
+      population
+    }
+  }`
 
+	reqMap := make(map[string]string)
 	reqMap["$bndBox"] = buffer.String()
 
-	req := client.Req{}
-	req.SetQueryWithVariables(getCitiesAroundTempl, reqMap)
-
 	var cities citiesReq
-	resp, err := dgCl.dg.Run(context.Background(), &req)
-	if err != nil {
-		fmt.Printf("(DGClient) Error while executing the GetCitiesAround request: %v", err)
-		return cities, err
-	}
-
-	if len(resp.N[0].Children) == 0 {
-		return cities, nil
-	}
-
-	if err = client.Unmarshal(resp.N, &cities); err != nil {
-		fmt.Printf("(DGClient) error while unmarshal dgraph reply: %v", err)
-		return cities, err
-	}
-
-	return cities, nil
+	err := SendRequest(dgCl, &getCitiesAroundTempl, &reqMap, &cities)
+	return cities, err
 }
 
 func (dgCl *DGClient) GetCity(id string) (cityReq, error){
@@ -254,26 +235,31 @@ func (dgCl *DGClient) GetCity(id string) (cityReq, error){
 	reqMap := make(map[string]string)
 	reqMap["$id"] = id
 
-	req := client.Req{}
-	req.SetQueryWithVariables(getCityTempl, reqMap)
-
 	var city cityReq
+	err := SendRequest(dgCl, &getCityTempl, &reqMap, &city)
+	return city, err
+}
+
+func SendRequest(dgCl *DGClient, reqStr *string, reqMap *map[string]string, rep interface{}) error {
+	req := client.Req{}
+	req.SetQueryWithVariables(*reqStr, *reqMap)
+
 	resp, err := dgCl.dg.Run(context.Background(), &req)
 	if err != nil {
 		fmt.Printf("(DGClient) Error while executing the GetCity request: %v", err)
-		return city, err
+		return err
 	}
 
 	if len(resp.N[0].Children) == 0 {
-		return city, nil
+		return nil
 	}
 
-	if err = client.Unmarshal(resp.N, &city); err != nil {
+	if err = client.Unmarshal(resp.N, rep); err != nil {
 		fmt.Printf("(DGClient) error while unmarshal dgraph reply: %v", err)
-		return city, err
+		return err
 	}
 
-	return city, nil
+	return nil
 }
 
 func DecodeGeoDatas(geo []byte) (geom.T, error) {
