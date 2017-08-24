@@ -99,7 +99,7 @@ func NewServer() (*Server, error) {
 // Start server
 func (s *Server) Start() {
 	defer s.db.Close()
-	log.Fatal(http.ListenAndServe(":8443", s.router))
+	log.Fatal(http.ListenAndServeTLS(":8443", "certificates/server.crt", "certificates/server.key", s.router))
 }
 
 // Handlers
