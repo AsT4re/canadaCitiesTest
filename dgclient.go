@@ -12,7 +12,6 @@ import (
 	"encoding/json"
 	"google.golang.org/grpc"
 	"github.com/dgraph-io/dgraph/client"
-	"github.com/golang/protobuf/proto"
 	"github.com/twpayne/go-geom/encoding/wkb"
 	geom "github.com/twpayne/go-geom"
 )
@@ -95,13 +94,12 @@ func (dgCl *DGClient) Init() error {
     }
 `)
 
-	resp, err := dgCl.dg.Run(context.Background(), &req)
+	_, err := dgCl.dg.Run(context.Background(), &req)
 	if err != nil {
 		fmt.Printf("(DGClient) Error while running mutation schema request: %v", err)
 		return err
 	}
 
-	fmt.Printf("Raw Response: %+v\n", proto.MarshalTextString(resp))
 	return nil
 }
 
@@ -238,8 +236,8 @@ func (dgCl *DGClient) GetCitiesAround(pos []float64, dist uint64) (citiesRep, er
 
 
 /*
-   Public helpers
-*/
+ *  Public helpers
+ */
 
 // Helper for decoding geodatas in binary format
 func DecodeGeoDatas(geo []byte) (geom.T, error) {
@@ -254,8 +252,8 @@ func DecodeGeoDatas(geo []byte) (geom.T, error) {
 
 
 /*
-   Private functions
-*/
+ *  Private functions
+ */
 
 func addEdge(name string, value interface{}, mnode *client.Node, req *client.Req) error {
 	e := mnode.Edge(name)

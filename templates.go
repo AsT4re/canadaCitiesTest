@@ -25,6 +25,10 @@ type ImportReq struct {
 	}                          `json:"features"`
 }
 
+const ErrNotFound = "City with id %v not found"
+const ErrInvalidUIntQsParam = "Invalid uint query string value '%v' for parameter '%v'"
+const ErrUnknownQsParam = "Unknown query string parameters"
+
 // Error Reply Template
 type ErrorRep struct {
 	Error           string     `json:"error"`
