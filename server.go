@@ -15,28 +15,6 @@ type Server struct {
 	router *mux.Router
 }
 
-type httpRetMsg struct {
-	Code      int
-	JsonTempl interface{}
-}
-
-type appHandler func(http.ResponseWriter, *http.Request) *httpRetMsg
-
-func (fn appHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "application/json; charset=UTF-8")
-	ret := fn(w, r)
-	w.WriteHeader(ret.Code)
-	if ret.Code >= 500 {
-		ret.JsonTempl = ErrorRep{"Internal Error"}
-	}
-
-	if (ret.JsonTempl != nil) {
-		if err := json.NewEncoder(w).Encode(ret.JsonTempl); err != nil {
-			panic(err)
-		}
-	}
-}
-
 type Route struct {
 	Name        string
 	Method      string
@@ -103,7 +81,34 @@ func (s *Server) Start() {
 	log.Fatal(http.ListenAndServeTLS(":8443", "certificates/server.crt", "certificates/server.key", s.router))
 }
 
-// Handlers
+type httpRetMsg struct {
+	Code      int
+	JsonTempl interface{}
+}
+
+type appHandler func(http.ResponseWriter, *http.Request) *httpRetMsg
+
+// Executed before sending response
+func (fn appHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json; charset=UTF-8")
+	ret := fn(w, r)
+	w.WriteHeader(ret.Code)
+	if ret.Code >= 500 {
+		ret.JsonTempl = ErrorRep{"Internal Error"}
+	}
+
+	if (ret.JsonTempl != nil) {
+		if err := json.NewEncoder(w).Encode(ret.JsonTempl); err != nil {
+			panic(err)
+		}
+	}
+}
+
+
+/*
+ *  Handlers
+ */
+
 
 // Route not found
 func NotFoundHandler(s *Server) appHandler {
@@ -150,19 +155,6 @@ func ImportHandler(s *Server) appHandler {
 	}
 }
 
-// Check validation of uint64 query string parameter
-func getUIntQsParam(v []string, key string) (uint64, error) {
-	if len(v) != 1 {
-		return 0, fmt.Errorf("Too many values for query string parameter: %v", key)
-	} else {
-		if u, err := strconv.ParseUint(v[0], 10, 64); err != nil {
-			return 0, fmt.Errorf(ErrInvalidUIntQsParam, v[0], key)
-		} else {
-			return u, nil
-		}
-	}
-}
-
 func FindHandler(s *Server) appHandler {
 	return func (w http.ResponseWriter, r *http.Request) *httpRetMsg {
 		vars := mux.Vars(r)
@@ -173,7 +165,7 @@ func FindHandler(s *Server) appHandler {
 		} else if city.Root == nil {
 			return &httpRetMsg{
 				http.StatusNotFound,
-				ErrorRep{fmt.Sprintf(ErrNotFound, cityId)},
+				ErrorRep{fmt.Sprintf(ErrNotFoundId, cityId)},
 			}
 		} else if geo, err := DecodeGeoDatas(city.Root.Geo); err != nil {
 				fmt.Printf("(FindHandler) error decoding geo datas: %v", err)
@@ -234,3 +226,21 @@ func FindHandler(s *Server) appHandler {
 	}
 }
 
+
+/*
+ *  Helpers
+ */
+
+
+// Check validation of uint64 query string parameter
+func getUIntQsParam(v []string, key string) (uint64, error) {
+	if len(v) != 1 {
+		return 0, fmt.Errorf("Too many values for query string parameter: %v", key)
+	} else {
+		if u, err := strconv.ParseUint(v[0], 10, 64); err != nil {
+			return 0, fmt.Errorf(ErrInvalidUIntQsParam, v[0], key)
+		} else {
+			return u, nil
+		}
+	}
+}

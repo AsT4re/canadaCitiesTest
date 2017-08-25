@@ -69,7 +69,7 @@ func TestNotFoundId(t *testing.T) {
 	response := executeRequest(req)
 	checkResponseCode(t, http.StatusNotFound, response.Code)
 
-	expected := ErrorRep{fmt.Sprintf(ErrNotFound, id)}
+	expected := ErrorRep{fmt.Sprintf(ErrNotFoundId, id)}
 
 	var result ErrorRep
 	checkJsonBody(t, req, response.Body.Bytes(), &expected, &result)
@@ -102,7 +102,7 @@ func TestUnknownQsParam(t *testing.T) {
 
 // Test for invalid query string parameters in URL with valid 'dist'
 func TestUnknownQsParamMultiple(t *testing.T) {
-	req, _ := http.NewRequest("GET", fmt.Sprintf("/id/42?dist=10&fko=67"), nil)
+	req, _ := http.NewRequest("GET", "/id/42?dist=10&fko=67", nil)
 	response := executeRequest(req)
 	checkResponseCode(t, http.StatusBadRequest, response.Code)
 
@@ -174,12 +174,11 @@ func TestNotFoundIdWithDist(t *testing.T) {
 	response := executeRequest(req)
 	checkResponseCode(t, http.StatusNotFound, response.Code)
 
-	expected := ErrorRep{fmt.Sprintf(ErrNotFound, id)}
+	expected := ErrorRep{fmt.Sprintf(ErrNotFoundId, id)}
 
 	var result ErrorRep
 	checkJsonBody(t, req, response.Body.Bytes(), &expected, &result)
 }
-
 
 
 /*
