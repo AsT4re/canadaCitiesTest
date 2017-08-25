@@ -92,6 +92,8 @@ func NewServer() (*Server, error) {
 			Handler(route.Handler)
 	}
 
+	s.router.NotFoundHandler = NotFoundHandler(s)
+
 	return s, nil
 }
 
@@ -102,6 +104,16 @@ func (s *Server) Start() {
 }
 
 // Handlers
+
+// Route not found
+func NotFoundHandler(s *Server) appHandler {
+	return func (w http.ResponseWriter, r *http.Request) *httpRetMsg {
+		return &httpRetMsg{
+			http.StatusNotFound,
+			ErrorRep{fmt.Sprintf(ErrRouteNotFound, r.Method, r.URL.Path)},
+		}
+	}
+}
 
 // Status
 func StatusHandler(s *Server) appHandler {

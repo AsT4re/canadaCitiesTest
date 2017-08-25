@@ -28,6 +28,7 @@ type ImportReq struct {
 const ErrNotFound = "City with id %v not found"
 const ErrInvalidUIntQsParam = "Invalid uint query string value '%v' for parameter '%v'"
 const ErrUnknownQsParam = "Unknown query string parameters"
+const ErrRouteNotFound = "Route %s %s not found"
 
 // Error Reply Template
 type ErrorRep struct {

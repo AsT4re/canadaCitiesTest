@@ -21,6 +21,30 @@ func TestMain(m *testing.M) {
  *  Tests
  */
 
+// Test bad route
+func TestRouteNotFound(t *testing.T) {
+	req, _ := http.NewRequest("GET", "/ilalded", nil)
+	response := executeRequest(req)
+	checkResponseCode(t, http.StatusNotFound, response.Code)
+
+	expected := ErrorRep{fmt.Sprintf(ErrRouteNotFound, req.Method, req.URL.Path)}
+
+	var result ErrorRep
+	checkJsonBody(t, req, response.Body.Bytes(), &expected, &result)
+}
+
+// Test route get id with bad id
+func TestBadId(t *testing.T) {
+	req, _ := http.NewRequest("GET", "/id/rt23u", nil)
+	response := executeRequest(req)
+	checkResponseCode(t, http.StatusNotFound, response.Code)
+
+	expected := ErrorRep{fmt.Sprintf(ErrRouteNotFound, req.Method, req.URL.Path)}
+
+	var result ErrorRep
+	checkJsonBody(t, req, response.Body.Bytes(), &expected, &result)
+}
+
 // Test found id
 func TestFoundId(t *testing.T) {
 	req, _ := http.NewRequest("GET", "/id/42", nil)
