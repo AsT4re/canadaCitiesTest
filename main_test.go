@@ -35,7 +35,7 @@ func TestFoundId(t *testing.T) {
 	}
 
 	var result CityTempl
-	checkJsonBody(t, req, response, &expected, &result)
+	checkJsonBody(t, req, response.Body.Bytes(), &expected, &result)
 }
 
 // Test not found id
@@ -48,7 +48,7 @@ func TestNotFoundId(t *testing.T) {
 	expected := ErrorRep{fmt.Sprintf(ErrNotFound, id)}
 
 	var result ErrorRep
-	checkJsonBody(t, req, response, &expected, &result)
+	checkJsonBody(t, req, response.Body.Bytes(), &expected, &result)
 }
 
 // Test for invalid dist qs parameter
@@ -61,7 +61,7 @@ func TestInvalidDistParam(t *testing.T) {
 	expected := ErrorRep{fmt.Sprintf(ErrInvalidUIntQsParam, dist, "dist")}
 
 	var result ErrorRep
-	checkJsonBody(t, req, response, &expected, &result)
+	checkJsonBody(t, req, response.Body.Bytes(), &expected, &result)
 }
 
 // Test for invalid query string parameters in URL
@@ -73,21 +73,89 @@ func TestUnknownQsParam(t *testing.T) {
 	expected := ErrorRep{ErrUnknownQsParam}
 
 	var result ErrorRep
-	checkJsonBody(t, req, response, &expected, &result)
+	checkJsonBody(t, req, response.Body.Bytes(), &expected, &result)
 }
 
 // Test for invalid query string parameters in URL with valid 'dist'
 func TestUnknownQsParamMultiple(t *testing.T) {
-	dist := "10"
-	req, _ := http.NewRequest("GET", fmt.Sprintf("/id/42?dist=%s&fko=67", dist), nil)
+	req, _ := http.NewRequest("GET", fmt.Sprintf("/id/42?dist=10&fko=67"), nil)
 	response := executeRequest(req)
 	checkResponseCode(t, http.StatusBadRequest, response.Code)
 
 	expected := ErrorRep{ErrUnknownQsParam}
 
 	var result ErrorRep
-	checkJsonBody(t, req, response, &expected, &result)
+	checkJsonBody(t, req, response.Body.Bytes(), &expected, &result)
 }
+
+// Test if list of cities returned is exactly the same list (without order)
+func TestCitiesAround(t *testing.T) {
+	req, _ := http.NewRequest("GET", "/id/123?dist=4", nil)
+	response := executeRequest(req)
+	checkResponseCode(t, http.StatusOK, response.Code)
+
+	expected := CitiesTempl {
+		[]CityTempl {
+			CityTempl {
+				134,
+				"Bradley",
+				2500,
+				[]float64{-82.411366, 42.339783},
+			},
+			CityTempl {
+				123,
+				"Jeannettes Creek",
+				244,
+				[]float64{-82.421253, 42.315238},
+			},
+			CityTempl {
+				106,
+				"Lighthouse",
+				410,
+				[]float64{-82.452364, 42.290865},
+			},
+		},
+	}
+
+	expMap := make(map[int64]CityTempl)
+	for _, city := range expected.Cities {
+		expMap[city.CartodbId] = city
+	}
+
+	body := response.Body.Bytes()
+	var result CitiesTempl
+	if err := json.Unmarshal(body, &result); err != nil {
+		var out bytes.Buffer
+		json.Indent(&out, body, "", "  ")
+		t.Errorf("Invalid json object as response: %s\n", string(out.Bytes()))
+		return
+	}
+
+	if len(result.Cities) != len(expected.Cities) {
+		issueMismatchBodyError(t, req, expected, body)
+	}
+
+	for _, resCity := range result.Cities {
+		expCity, ok := expMap[resCity.CartodbId]
+		if !ok || reflect.DeepEqual(resCity, expCity) == false {
+			issueMismatchBodyError(t, req, expected, body)
+		}
+	}
+}
+
+// Test not found id with dist
+func TestNotFoundIdWithDist(t *testing.T) {
+	id := "4234534"
+	req, _ := http.NewRequest("GET", fmt.Sprintf("/id/%s?dist=4", id), nil)
+	response := executeRequest(req)
+	checkResponseCode(t, http.StatusNotFound, response.Code)
+
+	expected := ErrorRep{fmt.Sprintf(ErrNotFound, id)}
+
+	var result ErrorRep
+	checkJsonBody(t, req, response.Body.Bytes(), &expected, &result)
+}
+
 
 
 /*
@@ -101,25 +169,30 @@ func executeRequest(req *http.Request) *httptest.ResponseRecorder {
 	return rr
 }
 
-func checkJsonBody(t *testing.T, req *http.Request, response *httptest.ResponseRecorder, expected, result interface{}) {
-	if err := json.Unmarshal(response.Body.Bytes(), result); err != nil {
-		t.Errorf("Invalid json object as response:\n%s\n", string(response.Body.Bytes()))
+// Check strict equality for Json body (even order in slices)
+func checkJsonBody(t *testing.T, req *http.Request, body []byte, expected, result interface{}) {
+	if err := json.Unmarshal(body, result); err != nil {
+		t.Errorf("Invalid json object as response:\n%s\n", string(body))
 		return
 	}
 
+	if reflect.DeepEqual(result, expected) == false {
+		issueMismatchBodyError(t, req, expected, body)
+	}
+}
+
+// Issue an error for this test printing an expected Json Body and the actual one
+func issueMismatchBodyError(t *testing.T, req *http.Request, expectedBody interface{}, resultBody []byte) {
 	const mismatchError = `
 For API %s %s
 Error: Json differs from expected.
 Result: %s
 Expected: %s
   `
-
-	if reflect.DeepEqual(result, expected) == false {
-		var out bytes.Buffer
-		json.Indent(&out, response.Body.Bytes(), "", "  ")
-		outExp, _ := json.MarshalIndent(expected, "", "  ")
-	 	t.Errorf(mismatchError, req.Method, req.URL.Path, string(out.Bytes()), string(outExp))
-	}
+	var out bytes.Buffer
+	json.Indent(&out, resultBody, "", "  ")
+	outExp, _ := json.MarshalIndent(expectedBody, "", "  ")
+	t.Errorf(mismatchError, req.Method, req.URL.Path, string(out.Bytes()), string(outExp))
 }
 
 func checkResponseCode(t *testing.T, expected, result int) {
