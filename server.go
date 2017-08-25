@@ -173,6 +173,15 @@ func FindHandler(s *Server) appHandler {
 		} else {
 			r.ParseForm()
 			qsLen := len(r.Form)
+			retCityMsg := httpRetMsg{
+				http.StatusOK,
+				CityTempl{
+					CartodbId: city.Root.Cartodb_id,
+					Name: city.Root.Name,
+					Population: city.Root.Population,
+					Coordinates: geo.FlatCoords(),
+				},
+			}
 			if qsLen != 0 {
 				v, ok := r.Form["dist"]
 				if !ok || qsLen > 1 {
@@ -186,41 +195,36 @@ func FindHandler(s *Server) appHandler {
 							http.StatusBadRequest,
 							ErrorRep{err.Error()},
 						}
+				} else {
+					if u == 0 {
+						return &retCityMsg
+					}
+					if cities, err := s.db.GetCitiesAround(geo.FlatCoords(), u); err != nil {
+						fmt.Printf("(FindHandler) error get cities: %v", err)
+						return &httpRetMsg{Code: http.StatusInternalServerError}
 					} else {
-						if cities, err := s.db.GetCitiesAround(geo.FlatCoords(), u); err != nil {
-							fmt.Printf("(FindHandler) error get cities: %v", err)
-							return &httpRetMsg{Code: http.StatusInternalServerError}
-						} else {
-							citiesRep := make([]CityTempl, len(cities.Root))
-							for i, city := range cities.Root {
-								citiesRep[i].CartodbId = city.Cartodb_id
-								citiesRep[i].Name = city.Name
-								citiesRep[i].Population = city.Population
-								if geo, err := DecodeGeoDatas(city.Geo); err != nil {
-									fmt.Printf("(FindHandler) error decoding geo datas: %v", err)
-									return &httpRetMsg{Code: http.StatusInternalServerError}
-								} else {
-									citiesRep[i].Coordinates = geo.FlatCoords()
-								}
-							}
-							return &httpRetMsg{
-								http.StatusOK,
-								CitiesTempl{
-									citiesRep,
-								},
+						citiesRep := make([]CityTempl, len(cities.Root))
+						for i, city := range cities.Root {
+							citiesRep[i].CartodbId = city.Cartodb_id
+							citiesRep[i].Name = city.Name
+							citiesRep[i].Population = city.Population
+							if geo, err := DecodeGeoDatas(city.Geo); err != nil {
+								fmt.Printf("(FindHandler) error decoding geo datas: %v", err)
+								return &httpRetMsg{Code: http.StatusInternalServerError}
+							} else {
+								citiesRep[i].Coordinates = geo.FlatCoords()
 							}
 						}
+						return &httpRetMsg{
+							http.StatusOK,
+							CitiesTempl{
+								citiesRep,
+							},
+						}
 					}
-			} else {
-				return &httpRetMsg{
-					http.StatusOK,
-					CityTempl{
-						CartodbId: city.Root.Cartodb_id,
-						Name: city.Root.Name,
-						Population: city.Root.Population,
-						Coordinates: geo.FlatCoords(),
-					},
 				}
+			} else {
+				return &retCityMsg
 			}
 		}
 	}
