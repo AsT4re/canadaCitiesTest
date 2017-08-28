@@ -81,8 +81,8 @@ func (dgCl *DGClient) Init() error {
 	req.SetQuery(`
     mutation {
       schema {
-        cartodb_id: int @index .
-        geo: geo @index .
+        cartodb_id: int @index(int) .
+        geo: geo @index(geo) .
         name: string .
         place_key: string .
         capital: string .
