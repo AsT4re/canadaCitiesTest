@@ -90,14 +90,14 @@ type appHandler func(http.ResponseWriter, *http.Request) *httpRetMsg
 
 // Executed before sending response
 func (fn appHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "application/json; charset=UTF-8")
 	ret := fn(w, r)
-	w.WriteHeader(ret.Code)
-	if ret.Code >= 500 {
-		ret.JsonTempl = ErrorRep{"Internal Error"}
+	if ret.Code == 0 {
+		panic(fmt.Errorf("Return code has not been set"))
 	}
+	w.WriteHeader(ret.Code)
 
 	if (ret.JsonTempl != nil) {
+		w.Header().Set("Content-Type", "application/json; charset=UTF-8")
 		if err := json.NewEncoder(w).Encode(ret.JsonTempl); err != nil {
 			panic(err)
 		}
