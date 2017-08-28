@@ -117,35 +117,34 @@ func (dgc *DGClient) Close() {
 // Method for importing GeoJson
 func (dgCl *DGClient) AddGeoJSON(feats *ImportReq) error {
 	for _, feat := range feats.Features {
-		req := client.Req{}
 		mnode, err := dgCl.dg.NodeBlank("")
 		if err != nil {
 			fmt.Printf("(DGClient) Error while creating blank node: %v", err)
 			return err
 		}
 
-		if err = addEdge("cartodb_id", feat.Properties.Cartodb_id, &mnode, &req); err != nil {
+		if err = addEdge(dgCl, &mnode, "cartodb_id", feat.Properties.Cartodb_id); err != nil {
 			return err
 		}
-		if err = addEdge("name", feat.Properties.Name, &mnode, &req); err != nil {
+		if err = addEdge(dgCl, &mnode, "name", feat.Properties.Name); err != nil {
 			return err
 		}
-		if err = addEdge("place_key", feat.Properties.Place_key, &mnode, &req); err != nil {
+		if err = addEdge(dgCl, &mnode, "place_key", feat.Properties.Place_key); err != nil {
 			return err
 		}
-		if err = addEdge("capital", feat.Properties.Capital, &mnode, &req); err != nil {
+		if err = addEdge(dgCl, &mnode, "capital", feat.Properties.Capital); err != nil {
 			return err
 		}
-		if err = addEdge("population", feat.Properties.Population, &mnode, &req); err != nil {
+		if err = addEdge(dgCl, &mnode, "population", feat.Properties.Population); err != nil {
 			return err
 		}
-		if err = addEdge("pclass", feat.Properties.Pclass, &mnode, &req); err != nil {
+		if err = addEdge(dgCl, &mnode, "pclass", feat.Properties.Pclass); err != nil {
 			return err
 		}
-		if err = addEdge("created_at", feat.Properties.Created_at, &mnode, &req); err != nil {
+		if err = addEdge(dgCl, &mnode, "created_at", feat.Properties.Created_at); err != nil {
 			return err
 		}
-		if err = addEdge("updated_at", feat.Properties.Updated_at, &mnode, &req); err != nil {
+		if err = addEdge(dgCl, &mnode, "updated_at", feat.Properties.Updated_at); err != nil {
 			return err
 		}
 
@@ -156,15 +155,13 @@ func (dgCl *DGClient) AddGeoJSON(feats *ImportReq) error {
 		}
 		geoStr := buf.String()
 
-		if err = addEdge("geo", geoStr, &mnode, &req); err != nil {
-			return err
-		}
-
-		if _, err := dgCl.dg.Run(context.Background(), &req); err != nil {
-			fmt.Printf("(DGClient) Error while executing the mutation request: %v", err)
+		if err = addEdge(dgCl, &mnode, "geo", geoStr); err != nil {
 			return err
 		}
 	}
+
+	dgCl.dg.BatchFlush()
+
 	return nil
 }
 
@@ -255,7 +252,7 @@ func DecodeGeoDatas(geo []byte) (geom.T, error) {
  *  Private functions
  */
 
-func addEdge(name string, value interface{}, mnode *client.Node, req *client.Req) error {
+func addEdge(dgCl *DGClient, mnode *client.Node, name string, value interface{}) error {
 	e := mnode.Edge(name)
 	var err error
 	switch v := value.(type) {
@@ -279,7 +276,7 @@ func addEdge(name string, value interface{}, mnode *client.Node, req *client.Req
 		fmt.Printf("(DGClient) Error while setting value for %v edge with value %v: %v", name, value, err)
 		return err
 	}
-	err = req.Set(e)
+	err = dgCl.dg.BatchSet(e)
 	if err != nil {
 		fmt.Printf("(DGClient) Error while setting value for %v edge with value %v: %v", name, value, err)
 		return err
