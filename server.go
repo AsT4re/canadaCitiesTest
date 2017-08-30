@@ -1,7 +1,7 @@
 package main
 
 import (
-	"log"
+	"context"
 	"net/http"
 	"github.com/gorilla/mux"
 	"encoding/json"
@@ -11,8 +11,8 @@ import (
 )
 
 type Server struct {
-	db *DGClient
-	router *mux.Router
+	db     *DGClient
+	Server *http.Server
 }
 
 type Route struct {
@@ -50,37 +50,57 @@ func getRoutes(s *Server) []Route {
 const JsonContentType = "application/json; charset=UTF-8"
 
 // Server constructor
-func NewServer() (*Server, error) {
-	s := new(Server)
+func (s *Server) Init() error {
 	var err error
 
 	// Init s.db
 	if s.db, err = NewDGClient(); err != nil {
 		fmt.Printf("(Server) Error while creating DGClient: %v", err)
-		return nil, err
+		return err
 	}
 	s.db.Init()
 
-	// Init s.router
+	// Init router
 	routes := getRoutes(s)
-	s.router = mux.NewRouter().StrictSlash(true)
+	router := mux.NewRouter().StrictSlash(true)
 	for _, route := range routes {
-		s.router.
+		router.
 			Methods(route.Method).
 			Path(route.Pattern).
 			Name(route.Name).
 			Handler(route.Handler)
 	}
 
-	s.router.NotFoundHandler = NotFoundHandler(s)
+	router.NotFoundHandler = NotFoundHandler(s)
 
-	return s, nil
+	// Init http server
+	s.Server = &http.Server{
+		Addr: ":8443",
+		Handler: router,
+	}
+
+	return nil
 }
 
 // Start server
-func (s *Server) Start() {
-	defer s.db.Close()
-	log.Fatal(http.ListenAndServeTLS(":8443", "certificates/server.crt", "certificates/server.key", s.router))
+func (s *Server) Start() error {
+	if err := s.Server.ListenAndServeTLS("certificates/server.crt", "certificates/server.key"); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+// Stop server
+func (s *Server) Stop(ctx *context.Context) error {
+	if err := s.Server.Shutdown(*ctx); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (s *Server) Close() {
+	s.db.Close()
 }
 
 type httpRetMsg struct {
