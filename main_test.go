@@ -26,6 +26,7 @@ func TestRouteNotFound(t *testing.T) {
 	req, _ := http.NewRequest("GET", "/ilalded", nil)
 	response := executeRequest(req)
 	checkResponseCode(t, http.StatusNotFound, response.Code)
+	checkContentType(t, JsonContentType, response.HeaderMap.Get("Content-Type"))
 
 	expected := ErrorRep{fmt.Sprintf(ErrRouteNotFound, req.Method, req.URL.Path)}
 
@@ -38,6 +39,7 @@ func TestBadId(t *testing.T) {
 	req, _ := http.NewRequest("GET", "/id/rt23u", nil)
 	response := executeRequest(req)
 	checkResponseCode(t, http.StatusNotFound, response.Code)
+	checkContentType(t, JsonContentType, response.HeaderMap.Get("Content-Type"))
 
 	expected := ErrorRep{fmt.Sprintf(ErrRouteNotFound, req.Method, req.URL.Path)}
 
@@ -50,6 +52,7 @@ func TestFoundId(t *testing.T) {
 	req, _ := http.NewRequest("GET", "/id/42", nil)
 	response := executeRequest(req)
 	checkResponseCode(t, http.StatusOK, response.Code)
+	checkContentType(t, JsonContentType, response.HeaderMap.Get("Content-Type"))
 
 	expected := CityTempl {
 		42,
@@ -68,6 +71,7 @@ func TestNotFoundId(t *testing.T) {
 	req, _ := http.NewRequest("GET", fmt.Sprintf("/id/%s", id), nil)
 	response := executeRequest(req)
 	checkResponseCode(t, http.StatusNotFound, response.Code)
+	checkContentType(t, JsonContentType, response.HeaderMap.Get("Content-Type"))
 
 	expected := ErrorRep{fmt.Sprintf(ErrNotFoundId, id)}
 
@@ -81,6 +85,7 @@ func TestInvalidDistParam(t *testing.T) {
 	req, _ := http.NewRequest("GET", fmt.Sprintf("/id/42?dist=%s", dist), nil)
 	response := executeRequest(req)
 	checkResponseCode(t, http.StatusBadRequest, response.Code)
+	checkContentType(t, JsonContentType, response.HeaderMap.Get("Content-Type"))
 
 	expected := ErrorRep{fmt.Sprintf(ErrInvalidUIntQsParam, dist, "dist")}
 
@@ -93,6 +98,7 @@ func TestUnknownQsParam(t *testing.T) {
 	req, _ := http.NewRequest("GET", "/id/42?dedo=67", nil)
 	response := executeRequest(req)
 	checkResponseCode(t, http.StatusBadRequest, response.Code)
+	checkContentType(t, JsonContentType, response.HeaderMap.Get("Content-Type"))
 
 	expected := ErrorRep{ErrUnknownQsParam}
 
@@ -105,6 +111,7 @@ func TestUnknownQsParamMultiple(t *testing.T) {
 	req, _ := http.NewRequest("GET", "/id/42?dist=10&fko=67", nil)
 	response := executeRequest(req)
 	checkResponseCode(t, http.StatusBadRequest, response.Code)
+	checkContentType(t, JsonContentType, response.HeaderMap.Get("Content-Type"))
 
 	expected := ErrorRep{ErrUnknownQsParam}
 
@@ -117,6 +124,7 @@ func TestCitiesAround(t *testing.T) {
 	req, _ := http.NewRequest("GET", "/id/123?dist=4", nil)
 	response := executeRequest(req)
 	checkResponseCode(t, http.StatusOK, response.Code)
+	checkContentType(t, JsonContentType, response.HeaderMap.Get("Content-Type"))
 
 	expected := CitiesTempl {
 		[]CityTempl {
@@ -173,6 +181,7 @@ func TestNotFoundIdWithDist(t *testing.T) {
 	req, _ := http.NewRequest("GET", fmt.Sprintf("/id/%s?dist=4", id), nil)
 	response := executeRequest(req)
 	checkResponseCode(t, http.StatusNotFound, response.Code)
+	checkContentType(t, JsonContentType, response.HeaderMap.Get("Content-Type"))
 
 	expected := ErrorRep{fmt.Sprintf(ErrNotFoundId, id)}
 
@@ -187,8 +196,9 @@ func TestNotFoundIdWithDist(t *testing.T) {
 
 func executeRequest(req *http.Request) *httptest.ResponseRecorder {
 	rr := httptest.NewRecorder()
-	s, _ := NewServer()
-	s.router.ServeHTTP(rr, req)
+	s := new(Server)
+	s.Init()
+	s.Server.Handler.ServeHTTP(rr, req)
 	return rr
 }
 
@@ -221,5 +231,11 @@ Expected: %s
 func checkResponseCode(t *testing.T, expected, result int) {
 	if expected != result {
 		t.Errorf("Expected response code %d. Got %d\n", expected, result)
+	}
+}
+
+func checkContentType(t *testing.T, expected, result string) {
+	if expected != result {
+		t.Errorf("Content-Type mismatch.\nResult:\n %s\nExpected:\n %s\n", result, expected)
 	}
 }

@@ -47,6 +47,8 @@ func getRoutes(s *Server) []Route {
 	}
 }
 
+const JsonContentType = "application/json; charset=UTF-8"
+
 // Server constructor
 func NewServer() (*Server, error) {
 	s := new(Server)
@@ -97,7 +99,7 @@ func (fn appHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(ret.Code)
 
 	if (ret.JsonTempl != nil) {
-		w.Header().Set("Content-Type", "application/json; charset=UTF-8")
+		w.Header().Set("Content-Type", JsonContentType)
 		if err := json.NewEncoder(w).Encode(ret.JsonTempl); err != nil {
 			panic(err)
 		}
