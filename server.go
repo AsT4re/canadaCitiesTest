@@ -116,10 +116,10 @@ func (fn appHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if ret.Code == 0 {
 		panic(fmt.Errorf("Return code has not been set"))
 	}
-	w.WriteHeader(ret.Code)
 
 	if (ret.JsonTempl != nil) {
 		w.Header().Set("Content-Type", JsonContentType)
+		w.WriteHeader(ret.Code)
 		if err := json.NewEncoder(w).Encode(ret.JsonTempl); err != nil {
 			panic(err)
 		}
