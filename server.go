@@ -3,9 +3,11 @@ package main
 import (
 	"context"
 	"net/http"
+	"github.com/pkg/errors"
 	"github.com/gorilla/mux"
 	"encoding/json"
 	"io/ioutil"
+	"os"
 	"fmt"
 	"strconv"
 )
@@ -51,11 +53,9 @@ const JsonContentType = "application/json; charset=UTF-8"
 
 // Server constructor
 func (s *Server) Init() error {
-	var err error
-
 	// Init s.db
+	var err error
 	if s.db, err = NewDGClient(); err != nil {
-		fmt.Printf("(Server) Error while creating DGClient: %v", err)
 		return err
 	}
 	s.db.Init()
@@ -85,7 +85,7 @@ func (s *Server) Init() error {
 // Start server
 func (s *Server) Start() error {
 	if err := s.Server.ListenAndServeTLS("certificates/server.crt", "certificates/server.key"); err != nil {
-		return err
+		return errors.Wrap(err, "Fail to serve")
 	}
 
 	return nil
@@ -94,7 +94,7 @@ func (s *Server) Start() error {
 // Stop server
 func (s *Server) Stop(ctx *context.Context) error {
 	if err := s.Server.Shutdown(*ctx); err != nil {
-		return err
+		return errors.Wrap(err, "Fail to properly shutdown the server")
 	}
 	return nil
 }
@@ -114,15 +114,18 @@ type appHandler func(http.ResponseWriter, *http.Request) *httpRetMsg
 func (fn appHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	ret := fn(w, r)
 	if ret.Code == 0 {
-		panic(fmt.Errorf("Return code has not been set"))
+		fmt.Fprintf(os.Stderr, "Error: Return code has not been set by handler\n")
+		ret.Code = http.StatusInternalServerError
 	}
 
 	if (ret.JsonTempl != nil) {
 		w.Header().Set("Content-Type", JsonContentType)
 		w.WriteHeader(ret.Code)
 		if err := json.NewEncoder(w).Encode(ret.JsonTempl); err != nil {
-			panic(err)
+			fmt.Fprintf(os.Stderr, "Error: Fail to serialize json body\n")
 		}
+	} else {
+		w.WriteHeader(ret.Code)
 	}
 }
 
@@ -154,23 +157,27 @@ func StatusHandler(s *Server) appHandler {
 
 func ImportHandler(s *Server) appHandler {
 	return func (w http.ResponseWriter, r *http.Request) *httpRetMsg {
+
 		body, err := ioutil.ReadAll(r.Body)
 		if err != nil {
-			return &httpRetMsg{Code: http.StatusInternalServerError}
+			return internalError(errors.Wrap(err, "Error reading body:"))
 		}
-		r.Body.Close()
+
+		if err = r.Body.Close(); err != nil {
+			return internalError(errors.Wrap(err, "Error closing pipe:"))
+		}
 
 		feats := ImportReq{}
 
-		if err := json.Unmarshal(body, &feats); err != nil {
+		if err = json.Unmarshal(body, &feats); err != nil {
 			return &httpRetMsg{
 				http.StatusUnprocessableEntity,
-				ErrorRep{fmt.Sprintf("Bad import request body: %v", err)},
+				ErrorRep{fmt.Sprintf(ErrUnprocessableEntity, err)},
 			}
 		}
 
 		if err = s.db.AddGeoJSON(&feats); err != nil {
-			return &httpRetMsg{Code: http.StatusInternalServerError}
+			return internalError(err)
 		}
 
 		return &httpRetMsg{Code: http.StatusCreated}
@@ -181,73 +188,88 @@ func FindHandler(s *Server) appHandler {
 	return func (w http.ResponseWriter, r *http.Request) *httpRetMsg {
 		vars := mux.Vars(r)
 		cityId := vars["id"]
-		if city, err := s.db.GetCity(cityId); err != nil {
-			fmt.Printf("(FindHandler) error get city: %v", err)
-			return &httpRetMsg{Code: http.StatusInternalServerError}
-		} else if city.Root == nil {
+
+		// Get city node
+		city, err := s.db.GetCity(cityId)
+		if err != nil {
+			return internalError(err)
+		}
+
+		// City not found
+		if city.Root == nil {
 			return &httpRetMsg{
 				http.StatusNotFound,
 				ErrorRep{fmt.Sprintf(ErrNotFoundId, cityId)},
 			}
-		} else if geo, err := DecodeGeoDatas(city.Root.Geo); err != nil {
-				fmt.Printf("(FindHandler) error decoding geo datas: %v", err)
-				return &httpRetMsg{Code: http.StatusInternalServerError}
-		} else {
-			r.ParseForm()
-			qsLen := len(r.Form)
-			retCityMsg := httpRetMsg{
+		}
+
+		geo, err := DecodeGeoDatas(city.Root.Geo)
+		if err != nil {
+			return internalError(err)
+		}
+
+		r.ParseForm()
+
+		cityInfos := CityTempl{
+			CartodbId: city.Root.Cartodb_id,
+			Name: city.Root.Name,
+			Population: city.Root.Population,
+			Coordinates: geo.FlatCoords(),
+		}
+
+		v, ok := r.Form["dist"]
+		if ok == false {
+			// Simple get of city informations
+			return &httpRetMsg{
 				http.StatusOK,
-				CityTempl{
-					CartodbId: city.Root.Cartodb_id,
-					Name: city.Root.Name,
-					Population: city.Root.Population,
-					Coordinates: geo.FlatCoords(),
+				cityInfos,
+			}
+		}
+
+		u, err := getUIntQsParam(v, "dist")
+		if err != nil {
+			// Bad uint parameter
+			return &httpRetMsg{
+				http.StatusBadRequest,
+				ErrorRep{err.Error()},
+			}
+		}
+		if u == 0 {
+			// Case where dist == 0, only the city is returned
+			return &httpRetMsg{
+				http.StatusOK,
+				CitiesTempl{
+					[]CityTempl{
+						cityInfos,
+					},
 				},
 			}
-			if qsLen != 0 {
-				v, ok := r.Form["dist"]
-				if !ok || qsLen > 1 {
-					return &httpRetMsg{
-							http.StatusBadRequest,
-							ErrorRep{ErrUnknownQsParam},
-						}
-				}
-				if u, err := getUIntQsParam(v, "dist"); err != nil {
-					return &httpRetMsg{
-							http.StatusBadRequest,
-							ErrorRep{err.Error()},
-						}
-				} else {
-					if u == 0 {
-						return &retCityMsg
-					}
-					if cities, err := s.db.GetCitiesAround(geo.FlatCoords(), u); err != nil {
-						fmt.Printf("(FindHandler) error get cities: %v", err)
-						return &httpRetMsg{Code: http.StatusInternalServerError}
-					} else {
-						citiesRep := make([]CityTempl, len(cities.Root))
-						for i, city := range cities.Root {
-							citiesRep[i].CartodbId = city.Cartodb_id
-							citiesRep[i].Name = city.Name
-							citiesRep[i].Population = city.Population
-							if geo, err := DecodeGeoDatas(city.Geo); err != nil {
-								fmt.Printf("(FindHandler) error decoding geo datas: %v", err)
-								return &httpRetMsg{Code: http.StatusInternalServerError}
-							} else {
-								citiesRep[i].Coordinates = geo.FlatCoords()
-							}
-						}
-						return &httpRetMsg{
-							http.StatusOK,
-							CitiesTempl{
-								citiesRep,
-							},
-						}
-					}
-				}
+		}
+
+		var cities citiesRep
+		cities, err = s.db.GetCitiesAround(geo.FlatCoords(), u)
+		if err != nil {
+			return internalError(err)
+		}
+
+		citiesArr := make([]CityTempl, len(cities.Root))
+		for i, city := range cities.Root {
+			citiesArr[i].CartodbId = city.Cartodb_id
+			citiesArr[i].Name = city.Name
+			citiesArr[i].Population = city.Population
+
+			if geo, err := DecodeGeoDatas(city.Geo); err != nil {
+				return internalError(err)
 			} else {
-				return &retCityMsg
+				citiesArr[i].Coordinates = geo.FlatCoords()
 			}
+		}
+
+		return &httpRetMsg{
+			http.StatusOK,
+			CitiesTempl{
+				citiesArr,
+			},
 		}
 	}
 }
@@ -257,11 +279,16 @@ func FindHandler(s *Server) appHandler {
  *  Helpers
  */
 
+// Print to the console + return json message internal error
+func internalError(err error) *httpRetMsg {
+	fmt.Fprintf(os.Stderr, "%+v\n", err)
+	return &httpRetMsg{Code: http.StatusInternalServerError}
+}
 
 // Check validation of uint64 query string parameter
 func getUIntQsParam(v []string, key string) (uint64, error) {
 	if len(v) != 1 {
-		return 0, fmt.Errorf("Too many values for query string parameter: %v", key)
+		return 0, fmt.Errorf(ErrTooManyValues, key)
 	} else {
 		if u, err := strconv.ParseUint(v[0], 10, 64); err != nil {
 			return 0, fmt.Errorf(ErrInvalidUIntQsParam, v[0], key)

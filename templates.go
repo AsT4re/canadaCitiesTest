@@ -29,6 +29,8 @@ const ErrNotFoundId = "City with id %v not found"
 const ErrInvalidUIntQsParam = "Invalid uint query string value '%v' for parameter '%v'"
 const ErrUnknownQsParam = "Unknown query string parameters"
 const ErrRouteNotFound = "Route %s %s not found"
+const ErrUnprocessableEntity = "Wrong body format: %v"
+const ErrTooManyValues = "Too many values for query string parameter: %v"
 
 // Error Reply Template
 type ErrorRep struct {

@@ -1,7 +1,7 @@
 package main
 
 import (
-	"errors"
+	"github.com/pkg/errors"
 	"fmt"
 	"context"
 	"io/ioutil"
@@ -58,16 +58,12 @@ func NewDGClient() (*DGClient, error) {
 	dgCl := new(DGClient)
 
 	var err error
-	dgCl.conn, err = grpc.Dial("127.0.0.1:9080", grpc.WithInsecure())
-	if err != nil {
-		fmt.Printf("(DGClient) Error while initializing grpc connection: %v", err)
-		return nil, err
+	if dgCl.conn, err = grpc.Dial("127.0.0.1:9080", grpc.WithInsecure()); err != nil {
+		return nil, errors.Wrap(err, "error dialing grpc connection")
 	}
 
-	dgCl.clientDir, err = ioutil.TempDir("", "client_")
-	if err != nil {
-		fmt.Printf("(DGClient) Error while creating temporary directory: %v", err)
-		return nil, err
+	if dgCl.clientDir, err = ioutil.TempDir("", "client_"); err != nil {
+		return nil, errors.Wrap(err, "error creating temporary directory")
 	}
 
 	dgCl.dg = client.NewDgraphClient([]*grpc.ClientConn{dgCl.conn}, client.DefaultOptions, dgCl.clientDir)
@@ -94,10 +90,8 @@ func (dgCl *DGClient) Init() error {
     }
 `)
 
-	_, err := dgCl.dg.Run(context.Background(), &req)
-	if err != nil {
-		fmt.Printf("(DGClient) Error while running mutation schema request: %v", err)
-		return err
+	if _, err := dgCl.dg.Run(context.Background(), &req); err != nil {
+		return errors.Wrap(err, "error running request for schema")
 	}
 
 	return nil
@@ -106,11 +100,15 @@ func (dgCl *DGClient) Init() error {
 // Close to cleanly exit at the end of the program
 func (dgc *DGClient) Close() {
 	if dgc.conn != nil {
-		dgc.conn.Close()
+		if err := dgc.conn.Close(); err != nil {
+			fmt.Fprintf(os.Stderr, "%+v\n", errors.Wrap(err, "Warning: closing connection failed:"))
+		}
 	}
 
 	if dgc.clientDir != "" {
-		os.RemoveAll(dgc.clientDir)
+		if err := os.RemoveAll(dgc.clientDir); err != nil {
+			fmt.Fprintf(os.Stderr, "%+v\n", errors.Wrap(err, "Warning: removing temp dir failed:"))
+		}
 	}
 }
 
@@ -119,44 +117,43 @@ func (dgCl *DGClient) AddGeoJSON(feats *ImportReq) error {
 	for _, feat := range feats.Features {
 		mnode, err := dgCl.dg.NodeBlank("")
 		if err != nil {
-			fmt.Printf("(DGClient) Error while creating blank node: %v", err)
-			return err
+			return errors.Wrap(err, "error creating blank node")
 		}
 
 		if err = addEdge(dgCl, &mnode, "cartodb_id", feat.Properties.Cartodb_id); err != nil {
-			return err
+			return errors.Wrap(err, "error adding edge")
 		}
 		if err = addEdge(dgCl, &mnode, "name", feat.Properties.Name); err != nil {
-			return err
+			return errors.Wrap(err, "error adding edge")
 		}
 		if err = addEdge(dgCl, &mnode, "place_key", feat.Properties.Place_key); err != nil {
-			return err
+			return errors.Wrap(err, "error adding edge")
 		}
 		if err = addEdge(dgCl, &mnode, "capital", feat.Properties.Capital); err != nil {
-			return err
+			return errors.Wrap(err, "error adding edge")
 		}
 		if err = addEdge(dgCl, &mnode, "population", feat.Properties.Population); err != nil {
-			return err
+			return errors.Wrap(err, "error adding edge")
 		}
 		if err = addEdge(dgCl, &mnode, "pclass", feat.Properties.Pclass); err != nil {
-			return err
+			return errors.Wrap(err, "error adding edge")
 		}
 		if err = addEdge(dgCl, &mnode, "created_at", feat.Properties.Created_at); err != nil {
-			return err
+			return errors.Wrap(err, "error adding edge")
 		}
 		if err = addEdge(dgCl, &mnode, "updated_at", feat.Properties.Updated_at); err != nil {
-			return err
+			return errors.Wrap(err, "error adding edge")
 		}
 
 		buf := bytes.Buffer{}
 		if err := json.NewEncoder(&buf).Encode(feat.Geometry); err != nil {
 			fmt.Printf("(DGClient) Error while encoding to Json feat.Geometry: %v", err)
-			return err
+			return errors.Wrap(err, "error serializing json")
 		}
 		geoStr := buf.String()
 
 		if err = addEdge(dgCl, &mnode, "geo", geoStr); err != nil {
-			return err
+			return errors.Wrap(err, "error adding edge")
 		}
 	}
 
@@ -239,8 +236,7 @@ func (dgCl *DGClient) GetCitiesAround(pos []float64, dist uint64) (citiesRep, er
 // Helper for decoding geodatas in binary format
 func DecodeGeoDatas(geo []byte) (geom.T, error) {
 	if vc, err := wkb.Unmarshal(geo); err != nil {
-		fmt.Printf("(DGClient) Error when calling wkb.unmarshal: %v", err)
-		return nil, err
+		return nil, errors.Wrap(err, "error unmarshalling for decode geo datas")
 	} else {
 		return vc, nil
 	}
@@ -273,13 +269,11 @@ func addEdge(dgCl *DGClient, mnode *client.Node, name string, value interface{})
 	}
 
 	if err != nil {
-		fmt.Printf("(DGClient) Error while setting value for %v edge with value %v: %v", name, value, err)
-		return err
+		return errors.Wrapf(err, "error while setting value for %v edge with value %v", name, value)
 	}
-	err = dgCl.dg.BatchSet(e)
-	if err != nil {
-		fmt.Printf("(DGClient) Error while setting value for %v edge with value %v: %v", name, value, err)
-		return err
+
+	if err = dgCl.dg.BatchSet(e); err != nil {
+		return errors.Wrapf(err, "error when setting batch for %v edge with value %v", name, value)
 	}
 
 	return nil
@@ -291,8 +285,7 @@ func SendRequest(dgCl *DGClient, reqStr *string, reqMap *map[string]string, rep 
 
 	resp, err := dgCl.dg.Run(context.Background(), &req)
 	if err != nil {
-		fmt.Printf("(DGClient) Error while executing the GetCity request: %v", err)
-		return err
+		return errors.Wrap(err, "error when executing request")
 	}
 
 	if len(resp.N[0].Children) == 0 {
@@ -300,8 +293,7 @@ func SendRequest(dgCl *DGClient, reqStr *string, reqMap *map[string]string, rep 
 	}
 
 	if err = client.Unmarshal(resp.N, rep); err != nil {
-		fmt.Printf("(DGClient) error while unmarshal dgraph reply: %v", err)
-		return err
+		return errors.Wrap(err, "error when unmarshaling dgraph reply")
 	}
 
 	return nil

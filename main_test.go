@@ -93,33 +93,7 @@ func TestInvalidDistParam(t *testing.T) {
 	checkJsonBody(t, req, response.Body.Bytes(), &expected, &result)
 }
 
-// Test for invalid query string parameters in URL
-func TestUnknownQsParam(t *testing.T) {
-	req, _ := http.NewRequest("GET", "/id/42?dedo=67", nil)
-	response := executeRequest(req)
-	checkResponseCode(t, http.StatusBadRequest, response.Code)
-	checkContentType(t, JsonContentType, response.HeaderMap.Get("Content-Type"))
-
-	expected := ErrorRep{ErrUnknownQsParam}
-
-	var result ErrorRep
-	checkJsonBody(t, req, response.Body.Bytes(), &expected, &result)
-}
-
-// Test for invalid query string parameters in URL with valid 'dist'
-func TestUnknownQsParamMultiple(t *testing.T) {
-	req, _ := http.NewRequest("GET", "/id/42?dist=10&fko=67", nil)
-	response := executeRequest(req)
-	checkResponseCode(t, http.StatusBadRequest, response.Code)
-	checkContentType(t, JsonContentType, response.HeaderMap.Get("Content-Type"))
-
-	expected := ErrorRep{ErrUnknownQsParam}
-
-	var result ErrorRep
-	checkJsonBody(t, req, response.Body.Bytes(), &expected, &result)
-}
-
-// Test if list of cities returned is exactly the same list (without order)
+// Test cities around a specific one
 func TestCitiesAround(t *testing.T) {
 	req, _ := http.NewRequest("GET", "/id/123?dist=4", nil)
 	response := executeRequest(req)
