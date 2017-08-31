@@ -1,4 +1,4 @@
-package main
+package dgclient
 
 import (
 	"github.com/pkg/errors"
@@ -9,7 +9,6 @@ import (
 	"bytes"
 	"strconv"
   "time"
-	"encoding/json"
 	"google.golang.org/grpc"
 	"github.com/dgraph-io/dgraph/client"
 	"github.com/twpayne/go-geom/encoding/wkb"
@@ -22,7 +21,7 @@ import (
  * Public structures
  */
 
-type cityProps struct {
+type CityProps struct {
 	Name        string       `dgraph:"name"`
 	Population  int64        `dgraph:"population"`
 	Cartodb_id  int64        `dgraph:"cartodb_id"`
@@ -30,22 +29,21 @@ type cityProps struct {
 }
 
 // Reply structure from GetCity request
-type cityRep struct {
- 	Root        *cityProps   `dgraph:"city"`
+type CityRep struct {
+ 	Root        *CityProps   `dgraph:"city"`
 }
 
 // Reply structure from GetCitiesAround request
-type citiesRep struct {
-	Root        []*cityProps `dgraph:"cities"`
+type CitiesRep struct {
+	Root        []*CityProps `dgraph:"cities"`
 }
 
 // Main class for handling dgraph database requests
 type DGClient struct {
-	conn      *grpc.ClientConn
+	conns     []*grpc.ClientConn
 	clientDir string
 	dg        *client.Dgraph
 }
-
 
 
 /*
@@ -53,20 +51,25 @@ type DGClient struct {
  */
 
 // DGClient constructor: initialize grpc connection and dgraph client
-func NewDGClient(host string) (*DGClient, error) {
+func NewDGClient(host string, nbConns uint) (*DGClient, error) {
 	// Init connection to DGraph
 	dgCl := new(DGClient)
 
 	var err error
-	if dgCl.conn, err = grpc.Dial(host, grpc.WithInsecure()); err != nil {
-		return nil, errors.Wrap(err, "error dialing grpc connection")
-	}
-
 	if dgCl.clientDir, err = ioutil.TempDir("", "client_"); err != nil {
 		return nil, errors.Wrap(err, "error creating temporary directory")
 	}
 
-	dgCl.dg = client.NewDgraphClient([]*grpc.ClientConn{dgCl.conn}, client.DefaultOptions, dgCl.clientDir)
+	grpcConns := make([]*grpc.ClientConn, nbConns)
+	for i := 0; uint(i) < nbConns; i++ {
+		if conn, err := grpc.Dial(host, grpc.WithInsecure()); err != nil {
+			return nil, errors.Wrap(err, "error dialing grpc connection")
+		} else {
+			grpcConns[i] = conn
+		}
+	}
+
+	dgCl.dg = client.NewDgraphClient(grpcConns, client.DefaultOptions, dgCl.clientDir)
 
 	return dgCl, nil
 }
@@ -99,9 +102,12 @@ func (dgCl *DGClient) Init() error {
 
 // Close to cleanly exit at the end of the program
 func (dgc *DGClient) Close() {
-	if dgc.conn != nil {
-		if err := dgc.conn.Close(); err != nil {
-			fmt.Fprintf(os.Stderr, "%+v\n", errors.Wrap(err, "Warning: closing connection failed:"))
+	if len(dgc.conns) > 0 {
+		connsLen := len(dgc.conns)
+		for i := 0; i < connsLen; i++ {
+			if err := dgc.conns[i].Close(); err != nil {
+				fmt.Fprintf(os.Stderr, "%+v\n", errors.Wrap(err, "Warning: closing connection failed:"))
+			}
 		}
 	}
 
@@ -113,57 +119,51 @@ func (dgc *DGClient) Close() {
 }
 
 // Method for importing GeoJson
-func (dgCl *DGClient) AddGeoJSON(feats *ImportReq) error {
-	for _, feat := range feats.Features {
-		mnode, err := dgCl.dg.NodeBlank("")
-		if err != nil {
-			return errors.Wrap(err, "error creating blank node")
-		}
-
-		if err = addEdge(dgCl, &mnode, "cartodb_id", feat.Properties.Cartodb_id); err != nil {
-			return errors.Wrap(err, "error adding edge")
-		}
-		if err = addEdge(dgCl, &mnode, "name", feat.Properties.Name); err != nil {
-			return errors.Wrap(err, "error adding edge")
-		}
-		if err = addEdge(dgCl, &mnode, "place_key", feat.Properties.Place_key); err != nil {
-			return errors.Wrap(err, "error adding edge")
-		}
-		if err = addEdge(dgCl, &mnode, "capital", feat.Properties.Capital); err != nil {
-			return errors.Wrap(err, "error adding edge")
-		}
-		if err = addEdge(dgCl, &mnode, "population", feat.Properties.Population); err != nil {
-			return errors.Wrap(err, "error adding edge")
-		}
-		if err = addEdge(dgCl, &mnode, "pclass", feat.Properties.Pclass); err != nil {
-			return errors.Wrap(err, "error adding edge")
-		}
-		if err = addEdge(dgCl, &mnode, "created_at", feat.Properties.Created_at); err != nil {
-			return errors.Wrap(err, "error adding edge")
-		}
-		if err = addEdge(dgCl, &mnode, "updated_at", feat.Properties.Updated_at); err != nil {
-			return errors.Wrap(err, "error adding edge")
-		}
-
-		buf := bytes.Buffer{}
-		if err := json.NewEncoder(&buf).Encode(feat.Geometry); err != nil {
-			fmt.Printf("(DGClient) Error while encoding to Json feat.Geometry: %v", err)
-			return errors.Wrap(err, "error serializing json")
-		}
-		geoStr := buf.String()
-
-		if err = addEdge(dgCl, &mnode, "geo", geoStr); err != nil {
-			return errors.Wrap(err, "error adding edge")
-		}
+func (dgCl *DGClient) AddNewNodeToBatch(name, place_key, capital, pclass, geo string,
+       	                                population, cartodb_id int64,
+	                                      created_at, updated_at time.Time) error {
+	mnode, err := dgCl.dg.NodeBlank("")
+	if err != nil {
+		return errors.Wrap(err, "error creating blank node")
 	}
 
-	dgCl.dg.BatchFlush()
+	if err = addEdge(dgCl, &mnode, "cartodb_id", cartodb_id); err != nil {
+		return errors.Wrap(err, "error adding edge")
+	}
+	if err = addEdge(dgCl, &mnode, "name", name); err != nil {
+		return errors.Wrap(err, "error adding edge")
+	}
+	if err = addEdge(dgCl, &mnode, "place_key", place_key); err != nil {
+		return errors.Wrap(err, "error adding edge")
+	}
+	if err = addEdge(dgCl, &mnode, "capital", capital); err != nil {
+		return errors.Wrap(err, "error adding edge")
+	}
+	if err = addEdge(dgCl, &mnode, "population", population); err != nil {
+		return errors.Wrap(err, "error adding edge")
+	}
+	if err = addEdge(dgCl, &mnode, "pclass", pclass); err != nil {
+		return errors.Wrap(err, "error adding edge")
+	}
+	if err = addEdge(dgCl, &mnode, "created_at", created_at); err != nil {
+		return errors.Wrap(err, "error adding edge")
+	}
+	if err = addEdge(dgCl, &mnode, "updated_at", updated_at); err != nil {
+		return errors.Wrap(err, "error adding edge")
+	}
+	if err = addEdge(dgCl, &mnode, "geo", geo); err != nil {
+		return errors.Wrap(err, "error adding edge")
+	}
 
 	return nil
 }
 
+func (dgCl *DGClient) BatchFlush() {
+	dgCl.dg.BatchFlush()
+}
+
 // Method for getting informations about a specific city given his id
-func (dgCl *DGClient) GetCity(id string) (cityRep, error){
+func (dgCl *DGClient) GetCity(id string) (CityRep, error){
 	getCityTempl := `{
     city(func: eq(cartodb_id, $id)) {
       name
@@ -176,13 +176,13 @@ func (dgCl *DGClient) GetCity(id string) (cityRep, error){
 	reqMap := make(map[string]string)
 	reqMap["$id"] = id
 
-	var city cityRep
-	err := SendRequest(dgCl, &getCityTempl, &reqMap, &city)
+	var city CityRep
+	err := sendRequest(dgCl, &getCityTempl, &reqMap, &city)
 	return city, err
 }
 
 // Method for getting informations about cities within a bounding box given his center coordinates and distance in kilometers
-func (dgCl *DGClient) GetCitiesAround(pos []float64, dist uint64) (citiesRep, error){
+func (dgCl *DGClient) GetCitiesAround(pos []float64, dist uint64) (CitiesRep, error){
 	minLat, minLong, maxLat, maxLong := getBoundingBox(pos[0], pos[1], float64(dist))
 
 	bndBox := [5][2]float64{
@@ -222,8 +222,8 @@ func (dgCl *DGClient) GetCitiesAround(pos []float64, dist uint64) (citiesRep, er
 	reqMap := make(map[string]string)
 	reqMap["$bndBox"] = buffer.String()
 
-	var cities citiesRep
-	err := SendRequest(dgCl, &getCitiesAroundTempl, &reqMap, &cities)
+	var cities CitiesRep
+	err := sendRequest(dgCl, &getCitiesAroundTempl, &reqMap, &cities)
 	return cities, err
 }
 
@@ -279,7 +279,7 @@ func addEdge(dgCl *DGClient, mnode *client.Node, name string, value interface{})
 	return nil
 }
 
-func SendRequest(dgCl *DGClient, reqStr *string, reqMap *map[string]string, rep interface{}) error {
+func sendRequest(dgCl *DGClient, reqStr *string, reqMap *map[string]string, rep interface{}) error {
 	req := client.Req{}
 	req.SetQueryWithVariables(*reqStr, *reqMap)
 

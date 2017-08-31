@@ -1,4 +1,4 @@
-package main
+package server
 
 import (
 	"context"
@@ -11,52 +11,63 @@ import (
 	"fmt"
 	"strconv"
 	"bytes"
+	"astare/canadaCitiesTest/dgclient"
 )
 
-type Server struct {
-	db     *DGClient
-	Server *http.Server
+
+/*
+ *  Private routes definition
+ */
+
+type route struct {
+	name        string
+	method      string
+	pattern     string
+	handler     appHandler
 }
 
-type Route struct {
-	Name        string
-	Method      string
-	Pattern     string
-	Handler     appHandler
-}
+type routes []route
 
-type Routes []Route
-
-func getRoutes(s *Server) []Route {
-	return Routes {
-		Route{
+func getRoutes(s *Server) []route {
+	return routes {
+		route{
 			"Status",
 			"GET",
 			"/",
-			StatusHandler(s),
+			statusHandler(s),
 		},
-		Route{
+		route{
 			"Import",
 			"POST",
 			"/import",
-			ImportHandler(s),
+			importHandler(s),
 		},
-		Route{
+		route{
 			"Find",
 			"GET",
 			"/id/{id:[0-9]+}",
-			FindHandler(s),
+			findHandler(s),
 		},
 	}
+}
+
+
+/*
+ *  Server object and methods
+ */
+
+type Server struct {
+	db     *dgclient.DGClient
+	server *http.Server
 }
 
 const JsonContentType = "application/json; charset=UTF-8"
 
 // Server constructor
-func (s *Server) Init(port, dgraph string) error {
+func (s *Server) Init(port, dgraph string, nbConns uint) error {
 	// Init s.db
 	var err error
-	if s.db, err = NewDGClient(dgraph); err != nil {
+	if s.db, err = dgclient.NewDGClient(dgraph, nbConns); err != nil {
 		return err
 	}
 	s.db.Init()
@@ -66,19 +77,19 @@ func (s *Server) Init(port, dgraph string) error {
 	router := mux.NewRouter().StrictSlash(true)
 	for _, route := range routes {
 		router.
-			Methods(route.Method).
-			Path(route.Pattern).
-			Name(route.Name).
-			Handler(route.Handler)
+			Methods(route.method).
+			Path(route.pattern).
+			Name(route.name).
+			Handler(route.handler)
 	}
 
-	router.NotFoundHandler = NotFoundHandler(s)
+	router.NotFoundHandler = notFoundHandler(s)
 
 	var buf bytes.Buffer
 	buf.WriteString(":")
 	buf.WriteString(port)
 	// Init http server
-	s.Server = &http.Server{
+	s.server = &http.Server{
 		Addr: buf.String(),
 		Handler: router,
 	}
@@ -86,20 +97,19 @@ func (s *Server) Init(port, dgraph string) error {
 	return nil
 }
 
-// Start server
 func (s *Server) Start(cert, key string) error {
-	if err := s.Server.ListenAndServeTLS(cert, key); err != nil {
+	if err := s.server.ListenAndServeTLS(cert, key); err != nil {
 		return errors.Wrap(err, "Fail to serve")
 	}
 
 	return nil
 }
 
-// Stop server
 func (s *Server) Stop(ctx *context.Context) error {
-	if err := s.Server.Shutdown(*ctx); err != nil {
+	if err := s.server.Shutdown(*ctx); err != nil {
 		return errors.Wrap(err, "Fail to properly shutdown the server")
 	}
+
 	return nil
 }
 
@@ -107,9 +117,14 @@ func (s *Server) Close() {
 	s.db.Close()
 }
 
+
+/*
+ *  Private Handlers
+ */
+
 type httpRetMsg struct {
-	Code      int
-	JsonTempl interface{}
+	code      int
+	jsonTempl interface{}
 }
 
 type appHandler func(http.ResponseWriter, *http.Request) *httpRetMsg
@@ -117,30 +132,24 @@ type appHandler func(http.ResponseWriter, *http.Request) *httpRetMsg
 // Executed before sending response
 func (fn appHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	ret := fn(w, r)
-	if ret.Code == 0 {
+	if ret.code == 0 {
 		fmt.Fprintf(os.Stderr, "Error: Return code has not been set by handler\n")
-		ret.Code = http.StatusInternalServerError
+		ret.code = http.StatusInternalServerError
 	}
 
-	if (ret.JsonTempl != nil) {
+	if (ret.jsonTempl != nil) {
 		w.Header().Set("Content-Type", JsonContentType)
-		w.WriteHeader(ret.Code)
-		if err := json.NewEncoder(w).Encode(ret.JsonTempl); err != nil {
+		w.WriteHeader(ret.code)
+		if err := json.NewEncoder(w).Encode(ret.jsonTempl); err != nil {
 			fmt.Fprintf(os.Stderr, "Error: Fail to serialize json body\n")
 		}
 	} else {
-		w.WriteHeader(ret.Code)
+		w.WriteHeader(ret.code)
 	}
 }
 
-
-/*
- *  Handlers
- */
-
-
 // Route not found
-func NotFoundHandler(s *Server) appHandler {
+func notFoundHandler(s *Server) appHandler {
 	return func (w http.ResponseWriter, r *http.Request) *httpRetMsg {
 		return &httpRetMsg{
 			http.StatusNotFound,
@@ -149,17 +158,16 @@ func NotFoundHandler(s *Server) appHandler {
 	}
 }
 
-// Status
-func StatusHandler(s *Server) appHandler {
+func statusHandler(s *Server) appHandler {
 	return func (w http.ResponseWriter, r *http.Request) *httpRetMsg {
 		return &httpRetMsg{
 			http.StatusOK,
-			StatusRep{"Cancities Server running on port 8443"},
+			StatusRep{"Server running on port 8443"},
 		}
 	}
 }
 
-func ImportHandler(s *Server) appHandler {
+func importHandler(s *Server) appHandler {
 	return func (w http.ResponseWriter, r *http.Request) *httpRetMsg {
 
 		body, err := ioutil.ReadAll(r.Body)
@@ -180,15 +188,33 @@ func ImportHandler(s *Server) appHandler {
 			}
 		}
 
-		if err = s.db.AddGeoJSON(&feats); err != nil {
-			return internalError(err)
+		for _, feat := range feats.Features {
+			buf := bytes.Buffer{}
+			if err := json.NewEncoder(&buf).Encode(feat.Geometry); err != nil {
+				return internalError(err)
+			}
+			err := s.db.AddNewNodeToBatch(
+				feat.Properties.Name,
+				feat.Properties.Place_key,
+				feat.Properties.Capital,
+				feat.Properties.Pclass,
+				buf.String(),
+				feat.Properties.Population,
+				feat.Properties.Cartodb_id,
+				feat.Properties.Created_at,
+				feat.Properties.Updated_at)
+			if err != nil {
+				return internalError(err)
+			}
 		}
 
-		return &httpRetMsg{Code: http.StatusCreated}
+		s.db.BatchFlush()
+
+		return &httpRetMsg{code: http.StatusCreated}
 	}
 }
 
-func FindHandler(s *Server) appHandler {
+func findHandler(s *Server) appHandler {
 	return func (w http.ResponseWriter, r *http.Request) *httpRetMsg {
 		vars := mux.Vars(r)
 		cityId := vars["id"]
@@ -207,7 +233,7 @@ func FindHandler(s *Server) appHandler {
 			}
 		}
 
-		geo, err := DecodeGeoDatas(city.Root.Geo)
+		geo, err := dgclient.DecodeGeoDatas(city.Root.Geo)
 		if err != nil {
 			return internalError(err)
 		}
@@ -250,7 +276,7 @@ func FindHandler(s *Server) appHandler {
 			}
 		}
 
-		var cities citiesRep
+		var cities dgclient.CitiesRep
 		cities, err = s.db.GetCitiesAround(geo.FlatCoords(), u)
 		if err != nil {
 			return internalError(err)
@@ -262,7 +288,7 @@ func FindHandler(s *Server) appHandler {
 			citiesArr[i].Name = city.Name
 			citiesArr[i].Population = city.Population
 
-			if geo, err := DecodeGeoDatas(city.Geo); err != nil {
+			if geo, err := dgclient.DecodeGeoDatas(city.Geo); err != nil {
 				return internalError(err)
 			} else {
 				citiesArr[i].Coordinates = geo.FlatCoords()
@@ -280,13 +306,13 @@ func FindHandler(s *Server) appHandler {
 
 
 /*
- *  Helpers
+ *  Private Helpers
  */
 
 // Print to the console + return json message internal error
 func internalError(err error) *httpRetMsg {
 	fmt.Fprintf(os.Stderr, "%+v\n", err)
-	return &httpRetMsg{Code: http.StatusInternalServerError}
+	return &httpRetMsg{code: http.StatusInternalServerError}
 }
 
 // Check validation of uint64 query string parameter

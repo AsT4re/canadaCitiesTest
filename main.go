@@ -9,11 +9,13 @@ import (
 	"os/signal"
 	"syscall"
 	"time"
+	"astare/canadaCitiesTest/server"
 )
 
 var (
 	port = flag.String("port", "8443", "Server port")
-	dgraph = flag.String("dgraph", "127.0.0.1:9080", "Dgraph hostname + port")
+	nbConns = flag.Uint("dg-conns-pool", 10, "Number of connections to DGraph")
+	dgraph = flag.String("dg-host-and-port", "127.0.0.1:9080", "Dgraph database hostname and port")
 	deadline = flag.Uint("deadline", 30, "Deadline for server to gracefully shutdown")
 	cert = flag.String("tls-crt", "certificates/server.crt", "Server TLS certificate")
 	key = flag.String("tls-key", "certificates/server.key", "Server TLS private key")
@@ -32,10 +34,10 @@ func run() error {
 	cSig := make(chan os.Signal, 2)
 	signal.Notify(cSig, os.Interrupt, syscall.SIGTERM)
 	cErr := make(chan error)
-	s := new(Server)
+	s := new(server.Server)
 
 	go func() {
-		if err := s.Init(*port, *dgraph); err != nil {
+		if err := s.Init(*port, *dgraph, *nbConns); err != nil {
 			cErr <- err
 			return
 		}

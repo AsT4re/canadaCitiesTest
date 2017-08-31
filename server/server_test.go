@@ -1,4 +1,4 @@
-package main
+package server
 
 import (
 	"bytes"
@@ -171,8 +171,8 @@ func TestNotFoundIdWithDist(t *testing.T) {
 func executeRequest(req *http.Request) *httptest.ResponseRecorder {
 	rr := httptest.NewRecorder()
 	s := new(Server)
-	s.Init("8443", "127.0.0.1:9080")
-	s.Server.Handler.ServeHTTP(rr, req)
+	s.Init("8443", "127.0.0.1:9080", 10)
+	s.server.Handler.ServeHTTP(rr, req)
 	return rr
 }
 
