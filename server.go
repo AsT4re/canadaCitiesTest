@@ -10,6 +10,7 @@ import (
 	"os"
 	"fmt"
 	"strconv"
+	"bytes"
 )
 
 type Server struct {
@@ -52,10 +53,10 @@ func getRoutes(s *Server) []Route {
 const JsonContentType = "application/json; charset=UTF-8"
 
 // Server constructor
-func (s *Server) Init() error {
+func (s *Server) Init(port, dgraph string) error {
 	// Init s.db
 	var err error
-	if s.db, err = NewDGClient(); err != nil {
+	if s.db, err = NewDGClient(dgraph); err != nil {
 		return err
 	}
 	s.db.Init()
@@ -73,9 +74,12 @@ func (s *Server) Init() error {
 
 	router.NotFoundHandler = NotFoundHandler(s)
 
+	var buf bytes.Buffer
+	buf.WriteString(":")
+	buf.WriteString(port)
 	// Init http server
 	s.Server = &http.Server{
-		Addr: ":8443",
+		Addr: buf.String(),
 		Handler: router,
 	}
 
@@ -83,8 +87,8 @@ func (s *Server) Init() error {
 }
 
 // Start server
-func (s *Server) Start() error {
-	if err := s.Server.ListenAndServeTLS("certificates/server.crt", "certificates/server.key"); err != nil {
+func (s *Server) Start(cert, key string) error {
+	if err := s.Server.ListenAndServeTLS(cert, key); err != nil {
 		return errors.Wrap(err, "Fail to serve")
 	}
 

@@ -12,10 +12,15 @@ import (
 )
 
 var (
-	dgraph = flag.String("h", "127.0.0.1:9080", "Dgraph gRPC server hostname + port")
+	port = flag.String("port", "8443", "Server port")
+	dgraph = flag.String("dgraph", "127.0.0.1:9080", "Dgraph hostname + port")
+	deadline = flag.Uint("deadline", 30, "Deadline for server to gracefully shutdown")
+	cert = flag.String("tls-crt", "certificates/server.crt", "Server TLS certificate")
+	key = flag.String("tls-key", "certificates/server.key", "Server TLS private key")
 )
 
 func main() {
+	flag.Parse()
 	if err := run(); err != nil {
 		fmt.Fprintf(os.Stderr, "%+v\n", err)
 		os.Exit(1)
@@ -30,11 +35,11 @@ func run() error {
 	s := new(Server)
 
 	go func() {
-		if err := s.Init(); err != nil {
+		if err := s.Init(*port, *dgraph); err != nil {
 			cErr <- err
 			return
 		}
-		if err := s.Start(); err != nil {
+		if err := s.Start(*cert, *key); err != nil {
 			if err == http.ErrServerClosed {
 				fmt.Printf("%v\n", err)
 			} else {
@@ -47,7 +52,7 @@ func run() error {
 
 	select {
 	case <-cSig:
-		d := time.Now().Add(500000 * time.Millisecond)
+		d := time.Now().Add(time.Duration(*deadline) * time.Second)
 		ctx, _ := context.WithDeadline(context.Background(), d)
 		if err := s.Stop(&ctx); err != nil {
 			return err

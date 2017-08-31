@@ -171,7 +171,7 @@ func TestNotFoundIdWithDist(t *testing.T) {
 func executeRequest(req *http.Request) *httptest.ResponseRecorder {
 	rr := httptest.NewRecorder()
 	s := new(Server)
-	s.Init()
+	s.Init("8443", "127.0.0.1:9080")
 	s.Server.Handler.ServeHTTP(rr, req)
 	return rr
 }

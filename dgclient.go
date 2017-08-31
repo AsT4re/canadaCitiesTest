@@ -53,12 +53,12 @@ type DGClient struct {
  */
 
 // DGClient constructor: initialize grpc connection and dgraph client
-func NewDGClient() (*DGClient, error) {
+func NewDGClient(host string) (*DGClient, error) {
 	// Init connection to DGraph
 	dgCl := new(DGClient)
 
 	var err error
-	if dgCl.conn, err = grpc.Dial("127.0.0.1:9080", grpc.WithInsecure()); err != nil {
+	if dgCl.conn, err = grpc.Dial(host, grpc.WithInsecure()); err != nil {
 		return nil, errors.Wrap(err, "error dialing grpc connection")
 	}
 
