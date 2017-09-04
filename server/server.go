@@ -99,7 +99,10 @@ func (s *Server) Init(port, dgraph string, nbConns uint) error {
 
 func (s *Server) Start(cert, key string) error {
 	if err := s.server.ListenAndServeTLS(cert, key); err != nil {
-		return errors.Wrap(err, "Fail to serve")
+		if err != http.ErrServerClosed {
+			return errors.Wrap(err, "Fail to serve")
+		}
+		return err
 	}
 
 	return nil
