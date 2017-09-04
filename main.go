@@ -16,7 +16,7 @@ var (
 	port = flag.String("port", "8443", "Server port")
 	nbConns = flag.Uint("dg-conns-pool", 10, "Number of connections to DGraph")
 	dgraph = flag.String("dg-host-and-port", "127.0.0.1:9080", "Dgraph database hostname and port")
-	deadline = flag.Uint("deadline", 30, "Deadline for server to gracefully shutdown")
+	deadline = flag.Uint("deadline", 30, "Deadline for server to gracefully shutdown (in seconds)")
 	cert = flag.String("tls-crt", "certificates/server.crt", "Server TLS certificate")
 	key = flag.String("tls-key", "certificates/server.key", "Server TLS private key")
 )
