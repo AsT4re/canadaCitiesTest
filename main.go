@@ -58,6 +58,8 @@ func run() error {
 		ctx, _ := context.WithDeadline(context.Background(), d)
 		if err := s.Stop(&ctx); err != nil {
 			return err
+		} else {
+			fmt.Printf("INFO: Server shutdown done\n")
 		}
 	case err := <-cErr:
 		return err
