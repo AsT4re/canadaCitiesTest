@@ -24,7 +24,7 @@ var (
 func main() {
 	flag.Parse()
 	if err := run(); err != nil {
-		fmt.Fprintf(os.Stderr, "%+v\n", err)
+		fmt.Fprintf(os.Stderr, "ERROR: %+v\n", err)
 		os.Exit(1)
 	}
 }
@@ -43,7 +43,7 @@ func run() error {
 		}
 		if err := s.Start(*cert, *key); err != nil {
 			if err == http.ErrServerClosed {
-				fmt.Printf("%v\n", err)
+				fmt.Printf("INFO: Wait for graceful shutdown of server...\n")
 			} else {
 				cErr <- err
 			}

@@ -106,14 +106,14 @@ func (dgc *DGClient) Close() {
 		connsLen := len(dgc.conns)
 		for i := 0; i < connsLen; i++ {
 			if err := dgc.conns[i].Close(); err != nil {
-				fmt.Fprintf(os.Stderr, "%+v\n", errors.Wrap(err, "Warning: closing connection failed:"))
+				fmt.Fprintf(os.Stderr, "WARNING: %+v\n", errors.Wrap(err, "closing connection failed:"))
 			}
 		}
 	}
 
 	if dgc.clientDir != "" {
 		if err := os.RemoveAll(dgc.clientDir); err != nil {
-			fmt.Fprintf(os.Stderr, "%+v\n", errors.Wrap(err, "Warning: removing temp dir failed:"))
+			fmt.Fprintf(os.Stderr, "WARNING: %+v\n", errors.Wrap(err, "removing temp dir failed:"))
 		}
 	}
 }

@@ -133,7 +133,7 @@ type appHandler func(http.ResponseWriter, *http.Request) *httpRetMsg
 func (fn appHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	ret := fn(w, r)
 	if ret.code == 0 {
-		fmt.Fprintf(os.Stderr, "Error: Return code has not been set by handler\n")
+		fmt.Fprintf(os.Stderr, "ERROR: Return code has not been set by handler\n")
 		ret.code = http.StatusInternalServerError
 	}
 
@@ -141,7 +141,7 @@ func (fn appHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", JsonContentType)
 		w.WriteHeader(ret.code)
 		if err := json.NewEncoder(w).Encode(ret.jsonTempl); err != nil {
-			fmt.Fprintf(os.Stderr, "Error: Fail to serialize json body\n")
+			fmt.Fprintf(os.Stderr, "ERROR: Fail to serialize json body\n")
 		}
 	} else {
 		w.WriteHeader(ret.code)
@@ -311,7 +311,7 @@ func findHandler(s *Server) appHandler {
 
 // Print to the console + return json message internal error
 func internalError(err error) *httpRetMsg {
-	fmt.Fprintf(os.Stderr, "%+v\n", err)
+	fmt.Fprintf(os.Stderr, "ERROR: %+v\n", err)
 	return &httpRetMsg{code: http.StatusInternalServerError}
 }
 
