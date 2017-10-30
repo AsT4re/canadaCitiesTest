@@ -22,20 +22,20 @@ import (
  */
 
 type CityProps struct {
-	Name        string       `dgraph:"name"`
-	Population  int64        `dgraph:"population"`
-	Cartodb_id  int64        `dgraph:"cartodb_id"`
-	Geo         []byte       `dgraph:"geo"`
+	Name        string       `json:"name"`
+	Population  int64        `json:"population"`
+	Cartodb_id  int64        `json:"cartodb_id"`
+	Geo         []byte       `json:"geo"`
 }
 
 // Reply structure from GetCity request
 type CityRep struct {
- 	Root        *CityProps   `dgraph:"city"`
+ 	Root        *CityProps   `json:"city"`
 }
 
 // Reply structure from GetCitiesAround request
 type CitiesRep struct {
-	Root        []*CityProps `dgraph:"cities"`
+	Root        []*CityProps `json:"cities"`
 }
 
 // Main class for handling dgraph database requests
@@ -194,7 +194,7 @@ func (dgCl *DGClient) GetCitiesAround(pos []float64, dist uint64) (CitiesRep, er
 	}
 
 	var buffer bytes.Buffer
-	buffer.WriteString("[")
+	buffer.WriteString("[[")
 	for i := 0 ; i < 5; i++ {
 		if i != 0 {
 			buffer.WriteString(", ")
@@ -208,7 +208,7 @@ func (dgCl *DGClient) GetCitiesAround(pos []float64, dist uint64) (CitiesRep, er
 		}
 		buffer.WriteString("]")
 	}
-	buffer.WriteString("]")
+	buffer.WriteString("]]")
 
 	getCitiesAroundTempl := `{
     cities(func: within(geo, $bndBox)) {
