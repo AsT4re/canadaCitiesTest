@@ -9,7 +9,7 @@ import (
 	"os/signal"
 	"syscall"
 	"time"
-	"astare/canadaCitiesTest/server"
+	"github.com/AsT4re/cancities/server"
 )
 
 var (

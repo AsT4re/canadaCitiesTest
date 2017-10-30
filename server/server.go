@@ -11,7 +11,7 @@ import (
 	"fmt"
 	"strconv"
 	"bytes"
-	"astare/canadaCitiesTest/dgclient"
+	"github.com/AsT4re/cancities/dgclient"
 )
 
 
